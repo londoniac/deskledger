@@ -22,3 +22,33 @@ export const INCOME_CATEGORIES = [
   { id: "interest", label: "Interest Received" },
   { id: "other_income", label: "Other Income" },
 ];
+
+export const PERSONAL_EXPENSE_CATEGORIES = [
+  { id: "groceries", label: "Groceries & Food" },
+  { id: "rent", label: "Rent / Mortgage" },
+  { id: "utilities_personal", label: "Bills & Utilities" },
+  { id: "transport", label: "Transport & Fuel" },
+  { id: "entertainment", label: "Entertainment & Leisure" },
+  { id: "dining", label: "Eating Out & Takeaways" },
+  { id: "shopping", label: "Shopping & Clothing" },
+  { id: "health", label: "Health & Fitness" },
+  { id: "subscriptions_personal", label: "Subscriptions" },
+  { id: "insurance_personal", label: "Insurance" },
+  { id: "debt", label: "Debt Repayment" },
+  { id: "savings", label: "Savings & Investments" },
+  { id: "childcare", label: "Childcare & Education" },
+  { id: "pets", label: "Pets" },
+  { id: "gifts", label: "Gifts & Donations" },
+  { id: "personal_other", label: "Other" },
+  { id: "transfer", label: "Transfer Between Accounts" },
+];
+
+export const PERSONAL_INCOME_CATEGORIES = [
+  { id: "salary", label: "Salary / Wages" },
+  { id: "freelance", label: "Freelance / Side Income" },
+  { id: "benefits", label: "Benefits & Credits" },
+  { id: "interest_personal", label: "Interest & Dividends" },
+  { id: "refunds", label: "Refunds" },
+  { id: "gifts_received", label: "Gifts Received" },
+  { id: "other_personal_income", label: "Other Income" },
+];

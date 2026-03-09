@@ -7,6 +7,7 @@ export default function Signup({ onSwitch }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [accountType, setAccountType] = useState("business");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,7 @@ export default function Signup({ onSwitch }) {
     }
     setLoading(true);
     try {
-      await signUp(email, password);
+      await signUp(email, password, { data: { account_type: accountType } });
       setSuccess(true);
     } catch (err) {
       setError(err.message);
@@ -50,9 +51,28 @@ export default function Signup({ onSwitch }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: PALETTE.bg }}>
       <div style={{ width: 400, padding: 40, background: PALETTE.card, borderRadius: 16, border: `1px solid ${PALETTE.border}` }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4, color: PALETTE.text }}>Create Account</h1>
-        <p style={{ fontSize: 14, color: PALETTE.textMuted, marginBottom: 32 }}>14-day free trial. No card required.</p>
+        <p style={{ fontSize: 14, color: PALETTE.textMuted, marginBottom: 24 }}>14-day free trial. No card required.</p>
 
         <form onSubmit={handleSubmit}>
+          {/* Account type toggle */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            {[{ id: "business", label: "Business", desc: "Ltd company, sole trader" }, { id: "personal", label: "Personal", desc: "Track spending & savings" }].map((t) => (
+              <div
+                key={t.id}
+                onClick={() => setAccountType(t.id)}
+                style={{
+                  flex: 1, padding: "14px 16px", borderRadius: 10, cursor: "pointer",
+                  border: `2px solid ${accountType === t.id ? PALETTE.accent : PALETTE.border}`,
+                  background: accountType === t.id ? PALETTE.accent + "10" : "transparent",
+                  transition: "all 0.2s",
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 600, color: accountType === t.id ? PALETTE.accent : PALETTE.text }}>{t.label}</div>
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 2 }}>{t.desc}</div>
+              </div>
+            ))}
+          </div>
+
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: "block", fontSize: 12, color: PALETTE.textDim, marginBottom: 6, fontWeight: 500 }}>Email</label>
             <input

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
 import api from "../lib/api.js";
-import { PALETTE, EXPENSE_CATEGORIES, PIE_COLORS } from "../lib/constants.js";
+import { PALETTE, EXPENSE_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PIE_COLORS } from "../lib/constants.js";
 import { fmt, r2 } from "../lib/format.js";
 import { Card, StatCard, Spinner } from "../components/ui.jsx";
 
@@ -20,6 +20,9 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  const isBusiness = (profile?.account_type || "business") === "business";
+  const expenseCats = isBusiness ? EXPENSE_CATEGORIES : PERSONAL_EXPENSE_CATEGORIES;
+
   const stats = useMemo(() => {
     const active = transactions.filter((t) => !t.excluded);
     const income = active.filter((t) => t.type === "income" && t.category !== "transfer");
@@ -27,13 +30,14 @@ export default function Dashboard() {
 
     const totalIncome = r2(income.reduce((s, t) => s + Number(t.amount), 0));
     const totalExpenses = r2(expenses.reduce((s, t) => s + Number(t.amount), 0));
-    const profit = r2(totalIncome - totalExpenses);
+    const net = r2(totalIncome - totalExpenses);
     const taxRate = profile?.tax_rate || 19;
-    const tax = profit > 0 ? r2(profit * (taxRate / 100)) : 0;
-    const margin = totalIncome > 0 ? r2((profit / totalIncome) * 100) : 0;
+    const tax = isBusiness && net > 0 ? r2(net * (taxRate / 100)) : 0;
+    const margin = totalIncome > 0 ? r2((net / totalIncome) * 100) : 0;
+    const savingsRate = totalIncome > 0 ? r2(((totalIncome - totalExpenses) / totalIncome) * 100) : 0;
 
-    return { income: totalIncome, expenses: totalExpenses, profit, tax, taxRate, margin, incomeCount: income.length, expenseCount: expenses.length };
-  }, [transactions, profile]);
+    return { income: totalIncome, expenses: totalExpenses, net, tax, taxRate, margin, savingsRate, incomeCount: income.length, expenseCount: expenses.length };
+  }, [transactions, profile, isBusiness]);
 
   const monthlyData = useMemo(() => {
     const active = transactions.filter((t) => !t.excluded && t.category !== "transfer");
@@ -55,7 +59,7 @@ export default function Dashboard() {
     const active = transactions.filter((t) => !t.excluded && t.type === "expense" && t.category !== "transfer");
     const cats = {};
     active.forEach((t) => {
-      const cat = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
+      const cat = expenseCats.find((c) => c.id === t.category);
       const label = cat ? cat.label : t.category || "Uncategorised";
       cats[label] = (cats[label] || 0) + Number(t.amount);
     });
@@ -70,10 +74,14 @@ export default function Dashboard() {
     <div>
       {/* Stats row */}
       <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-        <StatCard label="Trading Income" value={fmt(stats.income)} sub={`${stats.incomeCount} transactions`} color={PALETTE.income} />
-        <StatCard label="Total Expenses" value={fmt(stats.expenses)} sub={`${stats.expenseCount} transactions`} color={PALETTE.expense} />
-        <StatCard label="Net Profit" value={fmt(stats.profit)} sub={`${stats.margin}% margin`} color={stats.profit >= 0 ? PALETTE.income : PALETTE.expense} />
-        <StatCard label="Corp Tax Estimate" value={fmt(stats.tax)} sub={`@ ${stats.taxRate}%`} color={PALETTE.warning} />
+        <StatCard label={isBusiness ? "Trading Income" : "Money In"} value={fmt(stats.income)} sub={`${stats.incomeCount} transactions`} color={PALETTE.income} />
+        <StatCard label={isBusiness ? "Total Expenses" : "Money Out"} value={fmt(stats.expenses)} sub={`${stats.expenseCount} transactions`} color={PALETTE.expense} />
+        <StatCard label={isBusiness ? "Net Profit" : "Net Position"} value={fmt(stats.net)} sub={isBusiness ? `${stats.margin}% margin` : `${stats.savingsRate}% savings rate`} color={stats.net >= 0 ? PALETTE.income : PALETTE.expense} />
+        {isBusiness ? (
+          <StatCard label="Corp Tax Estimate" value={fmt(stats.tax)} sub={`@ ${stats.taxRate}%`} color={PALETTE.warning} />
+        ) : (
+          <StatCard label="Monthly Avg Spend" value={fmt(stats.expenses / Math.max(monthlyData.length, 1))} sub={`across ${monthlyData.length} months`} color={PALETTE.blue} />
+        )}
       </div>
 
       {/* VAT summary */}
@@ -159,7 +167,7 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {transactions.slice(0, 15).map((t) => {
-                  const cat = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
+                  const cat = expenseCats.find((c) => c.id === t.category);
                   return (
                     <tr key={t.id} style={{ borderBottom: `1px solid ${PALETTE.border}` }}>
                       <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim, whiteSpace: "nowrap" }}>

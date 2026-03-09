@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import api from "../lib/api.js";
-import { PALETTE, EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../lib/constants.js";
+import { PALETTE, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES } from "../lib/constants.js";
 import { fmt, r2, fmtDate } from "../lib/format.js";
 import { Card, Badge, Button, Select, Input, ErrorMsg, SuccessMsg, Spinner } from "../components/ui.jsx";
 
-const ALL_CATEGORIES = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES];
-
 export default function Transactions() {
   const [transactions, setTransactions] = useState([]);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
@@ -24,11 +23,16 @@ export default function Transactions() {
   const [editData, setEditData] = useState({});
 
   useEffect(() => {
-    api.transactions.getAll()
-      .then(setTransactions)
+    Promise.all([api.transactions.getAll(), api.profile.get()])
+      .then(([txns, prof]) => { setTransactions(txns); setProfile(prof); })
       .catch((e) => setMessage({ type: "error", text: e.message }))
       .finally(() => setLoading(false));
   }, []);
+
+  const isBusiness = (profile?.account_type || "business") === "business";
+  const expenseCats = isBusiness ? EXPENSE_CATEGORIES : PERSONAL_EXPENSE_CATEGORIES;
+  const incomeCats = isBusiness ? INCOME_CATEGORIES : PERSONAL_INCOME_CATEGORIES;
+  const ALL_CATEGORIES = [...expenseCats, ...incomeCats];
 
   const filtered = useMemo(() => {
     return transactions.filter((t) => {
@@ -191,7 +195,7 @@ export default function Transactions() {
                     const isEditing = editId === t.id;
 
                     if (isEditing) {
-                      const cats = editData.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+                      const cats = editData.type === "income" ? incomeCats : expenseCats;
                       return (
                         <tr key={t.id} style={{ background: PALETTE.bg }}>
                           <td style={{ padding: "8px 10px", fontSize: 13, color: PALETTE.textDim }}>{fmtDate(t.date)}</td>

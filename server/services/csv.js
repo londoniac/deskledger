@@ -91,8 +91,23 @@ export function normalizeTransactions(rows, source = "bank") {
   }).filter((t) => t.amount > 0 && t.description);
 }
 
-export function autoCategory(desc) {
+export function autoCategory(desc, accountType = "business") {
   const d = desc.toLowerCase();
+
+  if (accountType === "personal") {
+    // Personal finance keywords
+    if (d.includes("tesco") || d.includes("sainsbury") || d.includes("asda") || d.includes("aldi") || d.includes("lidl") || d.includes("waitrose") || d.includes("morrisons") || d.includes("co-op")) return "groceries";
+    if (d.includes("netflix") || d.includes("spotify") || d.includes("disney") || d.includes("amazon prime") || d.includes("apple")) return "subscriptions_personal";
+    if (d.includes("uber") || d.includes("bolt") || d.includes("tfl") || d.includes("trainline") || d.includes("fuel") || d.includes("petrol") || d.includes("bp") || d.includes("shell")) return "transport";
+    if (d.includes("nandos") || d.includes("mcdonalds") || d.includes("deliveroo") || d.includes("just eat") || d.includes("uber eats")) return "dining";
+    if (d.includes("gym") || d.includes("fitness") || d.includes("david lloyd") || d.includes("puregym")) return "health";
+    if (d.includes("primark") || d.includes("zara") || d.includes("asos") || d.includes("next") || d.includes("h&m")) return "shopping";
+    if (d.includes("council tax") || d.includes("water") || d.includes("electric") || d.includes("gas") || d.includes("british gas") || d.includes("octopus") || d.includes("thames")) return "utilities_personal";
+    if (d.includes("rent") || d.includes("mortgage") || d.includes("nationwide") || d.includes("halifax")) return "rent";
+    return "";
+  }
+
+  // Business keywords (default)
   if (d.includes("amazon") || d.includes("office") || d.includes("staples")) return "office";
   if (d.includes("train") || d.includes("uber") || d.includes("fuel") || d.includes("parking") || d.includes("taxi") || d.includes("tfl")) return "travel";
   if (d.includes("salary") || d.includes("payroll") || d.includes("wages")) return "staff";

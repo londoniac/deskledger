@@ -25,6 +25,7 @@ router.put("/", async (req, res, next) => {
       "company_name", "company_reg", "tax_ref", "year_start", "year_end",
       "seed_money", "tax_rate", "vat_registered", "vat_number",
       "paypal_sandbox",
+      "account_type",
     ];
     const updates = {};
     for (const key of allowed) {
