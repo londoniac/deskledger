@@ -69,6 +69,30 @@ const api = {
     accountantPackUrl: () => `${API_URL}/api/export/accountant-pack`,
     transactionsCsvUrl: () => `${API_URL}/api/export/transactions.csv`,
   },
+
+  debts: {
+    getAll: () => request("/api/debts"),
+    save: (debt) => request("/api/debts", { method: "POST", body: JSON.stringify(debt) }),
+    update: (id, data) => request(`/api/debts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id) => request(`/api/debts/${id}`, { method: "DELETE" }),
+    getPayments: (id) => request(`/api/debts/${id}/payments`),
+    addPayment: (id, data) => request(`/api/debts/${id}/payments`, { method: "POST", body: JSON.stringify(data) }),
+  },
+
+  budgets: {
+    getAll: (month) => request(`/api/budgets${month ? `?month=${month}` : ""}`),
+    save: (budget) => request("/api/budgets", { method: "POST", body: JSON.stringify(budget) }),
+    delete: (id) => request(`/api/budgets/${id}`, { method: "DELETE" }),
+    getIncomeSources: () => request("/api/budgets/income-sources"),
+    saveIncomeSource: (src) => request("/api/budgets/income-sources", { method: "POST", body: JSON.stringify(src) }),
+    deleteIncomeSource: (id) => request(`/api/budgets/income-sources/${id}`, { method: "DELETE" }),
+    getRules: () => request("/api/budgets/rules"),
+    saveRule: (rule) => request("/api/budgets/rules", { method: "POST", body: JSON.stringify(rule) }),
+    deleteRule: (id) => request(`/api/budgets/rules/${id}`, { method: "DELETE" }),
+    getCustomCategories: () => request("/api/budgets/categories"),
+    saveCustomCategory: (cat) => request("/api/budgets/categories", { method: "POST", body: JSON.stringify(cat) }),
+    deleteCustomCategory: (id) => request(`/api/budgets/categories/${id}`, { method: "DELETE" }),
+  },
 };
 
 export default api;

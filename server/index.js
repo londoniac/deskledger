@@ -10,6 +10,8 @@ import invoiceRoutes from "./routes/invoices.js";
 import expenseRoutes from "./routes/expenses.js";
 import importRoutes from "./routes/import.js";
 import exportRoutes from "./routes/export.js";
+import debtRoutes from "./routes/debts.js";
+import budgetRoutes from "./routes/budgets.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -43,6 +45,8 @@ app.use("/api/invoices", invoiceRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/import", importRoutes);
 app.use("/api/export", exportRoutes);
+app.use("/api/debts", debtRoutes);
+app.use("/api/budgets", budgetRoutes);
 
 // ─── Error Handler ───
 app.use((err, _req, res, _next) => {

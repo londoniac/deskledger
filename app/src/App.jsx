@@ -8,10 +8,14 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import Import from "./pages/Import.jsx";
 import Settings from "./pages/Settings.jsx";
+import Budget from "./pages/Budget.jsx";
+import Debts from "./pages/Debts.jsx";
 
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "budget", label: "Budget" },
   { id: "transactions", label: "Transactions" },
+  { id: "debts", label: "Debts" },
   { id: "import", label: "Import" },
   { id: "settings", label: "Settings" },
 ];
@@ -85,7 +89,9 @@ export default function App() {
       {/* Content */}
       <div style={{ padding: "24px 32px", maxWidth: 1200, margin: "0 auto" }}>
         {activeTab === "dashboard" && <Dashboard />}
+        {activeTab === "budget" && <Budget />}
         {activeTab === "transactions" && <Transactions />}
+        {activeTab === "debts" && <Debts />}
         {activeTab === "import" && <Import />}
         {activeTab === "settings" && <Settings onProfileUpdate={(p) => setCompanyName(p.company_name || "")} />}
       </div>

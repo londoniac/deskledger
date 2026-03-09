@@ -86,6 +86,16 @@ export default function Transactions() {
         updated_at: new Date().toISOString(),
       });
       setTransactions((prev) => prev.map((t) => (t.id === editId ? { ...t, ...updated } : t)));
+
+      // Learn: save category rule if category was changed
+      const original = transactions.find((t) => t.id === editId);
+      if (original && editData.category && editData.category !== original.category && original.description) {
+        const words = original.description.toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 3).join(" ");
+        if (words) {
+          api.budgets.saveRule({ pattern: words, category: editData.category, type: editData.type }).catch(() => {});
+        }
+      }
+
       setEditId(null);
       setMessage({ type: "success", text: "Transaction updated" });
     } catch (e) {
