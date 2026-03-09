@@ -32,7 +32,7 @@ async function request(path, options = {}) {
   return res;
 }
 
-export const api = {
+const api = {
   profile: {
     get: () => request("/api/profile"),
     update: (data) => request("/api/profile", { method: "PUT", body: JSON.stringify(data) }),
@@ -70,3 +70,5 @@ export const api = {
     transactionsCsvUrl: () => `${API_URL}/api/export/transactions.csv`,
   },
 };
+
+export default api;

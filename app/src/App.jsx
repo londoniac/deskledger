@@ -3,23 +3,10 @@ import { useAuth } from "./hooks/useAuth.jsx";
 import { PALETTE } from "./lib/constants.js";
 import Login from "./pages/Login.jsx";
 import Signup from "./pages/Signup.jsx";
-
-// Placeholder components — will be built out from desktop app
-function Dashboard() {
-  return <div style={{ padding: 20, color: PALETTE.textDim }}>Dashboard — coming next</div>;
-}
-
-function Transactions() {
-  return <div style={{ padding: 20, color: PALETTE.textDim }}>Transactions — coming next</div>;
-}
-
-function Import() {
-  return <div style={{ padding: 20, color: PALETTE.textDim }}>Import — coming next</div>;
-}
-
-function Settings() {
-  return <div style={{ padding: 20, color: PALETTE.textDim }}>Settings — coming next</div>;
-}
+import Dashboard from "./pages/Dashboard.jsx";
+import Transactions from "./pages/Transactions.jsx";
+import Import from "./pages/Import.jsx";
+import Settings from "./pages/Settings.jsx";
 
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
