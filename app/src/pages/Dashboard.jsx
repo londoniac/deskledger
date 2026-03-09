@@ -9,40 +9,76 @@ import { useWorkspace } from "../App.jsx";
 export default function Dashboard() {
   const { mode } = useWorkspace();
   const [transactions, setTransactions] = useState([]);
+  const [paypalTxns, setPaypalTxns] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.transactions.getAll(), api.profile.get()])
-      .then(([txns, prof]) => {
+    const fetches = [api.transactions.getAll(), api.profile.get()];
+    if (mode === "business") {
+      fetches.push(
+        api.paypal.getTransactions().catch(() => [])
+      );
+    }
+    Promise.all(fetches)
+      .then(([txns, prof, pp]) => {
         setTransactions(txns);
         setProfile(prof);
+        if (pp) setPaypalTxns(pp);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [mode]);
 
   const isBusiness = mode === "business";
   const expenseCats = isBusiness ? EXPENSE_CATEGORIES : PERSONAL_EXPENSE_CATEGORIES;
+  const EXCLUDE_FROM_INCOME = ["transfer", "capital"];
 
   const stats = useMemo(() => {
     const active = transactions.filter((t) => !t.excluded);
-    const income = active.filter((t) => t.type === "income" && t.category !== "transfer");
+    const income = active.filter((t) => t.type === "income" && !EXCLUDE_FROM_INCOME.includes(t.category));
+    const capitalTxns = active.filter((t) => t.type === "income" && t.category === "capital");
     const expenses = active.filter((t) => t.type === "expense" && t.category !== "transfer");
 
     const totalIncome = r2(income.reduce((s, t) => s + Number(t.amount), 0));
-    const totalExpenses = r2(expenses.reduce((s, t) => s + Number(t.amount), 0));
-    const net = r2(totalIncome - totalExpenses);
+    const totalCapital = r2(capitalTxns.reduce((s, t) => s + Number(t.amount), 0));
+    let companyExpenses = r2(expenses.reduce((s, t) => s + Number(t.amount), 0));
+
+    // PayPal expenses (payouts + fees)
+    let paypalExpenses = 0;
+    if (isBusiness && paypalTxns.length > 0) {
+      paypalExpenses = r2(paypalTxns
+        .filter((t) => t.type === "expense")
+        .reduce((s, t) => s + Number(t.amount), 0));
+    }
+
+    // PayPal income (payments received)
+    let paypalIncome = 0;
+    if (isBusiness && paypalTxns.length > 0) {
+      paypalIncome = r2(paypalTxns
+        .filter((t) => t.type === "income")
+        .reduce((s, t) => s + Number(t.amount), 0));
+    }
+
+    const combinedIncome = r2(totalIncome + paypalIncome);
+    const combinedExpenses = r2(companyExpenses + paypalExpenses);
+    const net = r2(combinedIncome - combinedExpenses);
     const taxRate = profile?.tax_rate || 19;
     const tax = isBusiness && net > 0 ? r2(net * (taxRate / 100)) : 0;
-    const margin = totalIncome > 0 ? r2((net / totalIncome) * 100) : 0;
-    const savingsRate = totalIncome > 0 ? r2(((totalIncome - totalExpenses) / totalIncome) * 100) : 0;
+    const margin = combinedIncome > 0 ? r2((net / combinedIncome) * 100) : 0;
+    const savingsRate = combinedIncome > 0 ? r2(((combinedIncome - combinedExpenses) / combinedIncome) * 100) : 0;
 
-    return { income: totalIncome, expenses: totalExpenses, net, tax, taxRate, margin, savingsRate, incomeCount: income.length, expenseCount: expenses.length };
-  }, [transactions, profile, isBusiness]);
+    return {
+      income: combinedIncome, expenses: combinedExpenses, net, tax, taxRate, margin, savingsRate,
+      incomeCount: income.length + (isBusiness ? paypalTxns.filter((t) => t.type === "income").length : 0),
+      expenseCount: expenses.length + (isBusiness ? paypalTxns.filter((t) => t.type === "expense").length : 0),
+      companyExpenses, paypalExpenses, paypalIncome, totalCapital,
+      bankIncome: totalIncome,
+    };
+  }, [transactions, paypalTxns, profile, isBusiness]);
 
   const monthlyData = useMemo(() => {
-    const active = transactions.filter((t) => !t.excluded && t.category !== "transfer");
+    const active = transactions.filter((t) => !t.excluded && !EXCLUDE_FROM_INCOME.includes(t.category) && t.category !== "transfer");
     const months = {};
     active.forEach((t) => {
       const d = new Date(t.date);
@@ -51,11 +87,21 @@ export default function Dashboard() {
       if (t.type === "income") months[key].income += Number(t.amount);
       else months[key].expenses += Number(t.amount);
     });
+    // Include PayPal in monthly chart
+    if (isBusiness) {
+      paypalTxns.forEach((t) => {
+        const d = new Date(t.date);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (!months[key]) months[key] = { month: key, income: 0, expenses: 0 };
+        if (t.type === "income") months[key].income += Number(t.amount);
+        else months[key].expenses += Number(t.amount);
+      });
+    }
     return Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).map((m) => ({
       ...m, income: r2(m.income), expenses: r2(m.expenses),
       label: new Date(m.month + "-01").toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
     }));
-  }, [transactions]);
+  }, [transactions, paypalTxns, isBusiness]);
 
   const categoryData = useMemo(() => {
     const active = transactions.filter((t) => !t.excluded && t.type === "expense" && t.category !== "transfer");
@@ -65,10 +111,18 @@ export default function Dashboard() {
       const label = cat ? cat.label : t.category || "Uncategorised";
       cats[label] = (cats[label] || 0) + Number(t.amount);
     });
+    // PayPal expenses by category
+    if (isBusiness) {
+      paypalTxns.filter((t) => t.type === "expense").forEach((t) => {
+        const cat = expenseCats.find((c) => c.id === t.category);
+        const label = cat ? cat.label : t.category || "PayPal";
+        cats[label] = (cats[label] || 0) + Number(t.amount);
+      });
+    }
     return Object.entries(cats)
       .map(([name, value]) => ({ name, value: r2(value) }))
       .sort((a, b) => b.value - a.value);
-  }, [transactions]);
+  }, [transactions, paypalTxns, isBusiness]);
 
   if (loading) return <Spinner />;
 
@@ -77,7 +131,14 @@ export default function Dashboard() {
       {/* Stats row */}
       <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
         <StatCard label={isBusiness ? "Trading Income" : "Money In"} value={fmt(stats.income)} sub={`${stats.incomeCount} transactions`} color={PALETTE.income} />
-        <StatCard label={isBusiness ? "Total Expenses" : "Money Out"} value={fmt(stats.expenses)} sub={`${stats.expenseCount} transactions`} color={PALETTE.expense} />
+        <StatCard
+          label={isBusiness ? "Total Expenses" : "Money Out"}
+          value={fmt(stats.expenses)}
+          sub={isBusiness && stats.paypalExpenses > 0
+            ? `${fmt(stats.companyExpenses)} company + ${fmt(stats.paypalExpenses)} PayPal`
+            : `${stats.expenseCount} transactions`}
+          color={PALETTE.expense}
+        />
         <StatCard label={isBusiness ? "Net Profit" : "Net Position"} value={fmt(stats.net)} sub={isBusiness ? `${stats.margin}% margin` : `${stats.savingsRate}% savings rate`} color={stats.net >= 0 ? PALETTE.income : PALETTE.expense} />
         {isBusiness ? (
           <StatCard label="Corp Tax Estimate" value={fmt(stats.tax)} sub={`@ ${stats.taxRate}%`} color={PALETTE.warning} />
@@ -85,6 +146,9 @@ export default function Dashboard() {
           <StatCard label="Monthly Avg Spend" value={fmt(stats.expenses / Math.max(monthlyData.length, 1))} sub={`across ${monthlyData.length} months`} color={PALETTE.blue} />
         )}
       </div>
+
+      {/* Account Reconciliation (Business) */}
+      {isBusiness && <AccountReconciliation stats={stats} profile={profile} />}
 
       {/* VAT summary */}
       {profile?.vat_registered && <VatSummary transactions={transactions} />}
@@ -202,6 +266,61 @@ export default function Dashboard() {
         )}
       </Card>
     </div>
+  );
+}
+
+function AccountReconciliation({ stats, profile }) {
+  const seedMoney = Number(profile?.seed_money || 0);
+  const bankBalance = r2(seedMoney + stats.bankIncome - stats.companyExpenses);
+  const paypalBalance = r2(stats.paypalIncome - stats.paypalExpenses);
+  const cashPosition = r2(bankBalance + paypalBalance);
+  const plCheck = r2(seedMoney + stats.income - stats.expenses);
+  const variance = r2(cashPosition - plCheck);
+
+  const Row = ({ label, value, color, bold, indent }) => (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: "6px 0", marginLeft: indent ? 16 : 0,
+      borderBottom: bold ? "none" : `1px solid ${PALETTE.border}22`,
+    }}>
+      <span style={{ fontSize: 13, color: bold ? PALETTE.text : PALETTE.textDim, fontWeight: bold ? 600 : 400 }}>{label}</span>
+      <span style={{
+        fontSize: 14, fontFamily: "JetBrains Mono, monospace",
+        fontWeight: bold ? 700 : 500, color: color || PALETTE.text,
+      }}>{fmt(value)}</span>
+    </div>
+  );
+
+  return (
+    <Card style={{ marginBottom: 24 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: PALETTE.text, marginBottom: 16 }}>Account Reconciliation</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        <div>
+          <div style={{ fontSize: 12, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Balances</div>
+          {seedMoney > 0 && <Row label="Seed Capital" value={seedMoney} color={PALETTE.blue} />}
+          <Row label="Bank (trading)" value={r2(stats.bankIncome - stats.companyExpenses)} />
+          {stats.paypalIncome > 0 || stats.paypalExpenses > 0 ? (
+            <Row label="PayPal" value={paypalBalance} />
+          ) : null}
+          <Row label="Cash Position" value={cashPosition} color={cashPosition >= 0 ? PALETTE.income : PALETTE.expense} bold />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>P&L Check</div>
+          <Row label="Trading Income" value={stats.income} color={PALETTE.income} />
+          <Row label="Total Expenses" value={stats.expenses} color={PALETTE.expense} />
+          <Row label="Net Profit" value={stats.net} color={stats.net >= 0 ? PALETTE.income : PALETTE.expense} />
+          <Row label="+ Seed Capital" value={seedMoney} color={PALETTE.blue} />
+          <Row label="Expected Cash" value={plCheck} bold />
+          <div style={{
+            marginTop: 8, padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+            background: Math.abs(variance) < 0.01 ? PALETTE.accentDim : PALETTE.dangerDim,
+            color: Math.abs(variance) < 0.01 ? PALETTE.accent : PALETTE.danger,
+          }}>
+            Variance: {fmt(variance)} {Math.abs(variance) < 0.01 ? "(balanced)" : ""}
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 

@@ -21,6 +21,7 @@ export const INCOME_CATEGORIES = [
   { id: "services", label: "Service Income" },
   { id: "interest", label: "Interest Received" },
   { id: "other_income", label: "Other Income" },
+  { id: "capital", label: "Capital / Seed Money" },
 ];
 
 export const PERSONAL_EXPENSE_CATEGORIES = [
