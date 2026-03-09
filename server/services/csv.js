@@ -63,12 +63,15 @@ export function normalizeTransactions(rows, source = "bank") {
     // Source ID for deduplication
     sourceId = row.id || row.transaction_id || row["transaction id"] || "";
 
-    // Normalise date: try DD/MM/YYYY, YYYY-MM-DD, etc
+    // Normalise date to YYYY-MM-DD for PostgreSQL
     let normDate = date;
-    if (date.match(/^\d{4}-\d{2}-\d{2}/)) {
-      // YYYY-MM-DD — convert to DD/MM/YYYY
-      const [y, m, d] = date.split(/[-T]/);
-      normDate = `${d}/${m}/${y}`;
+    if (date.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+      // DD/MM/YYYY → YYYY-MM-DD
+      const [d, m, y] = date.split("/");
+      normDate = `${y}-${m}-${d}`;
+    } else if (date.match(/^\d{4}-\d{2}-\d{2}/)) {
+      // Already YYYY-MM-DD — strip time if present
+      normDate = date.split("T")[0];
     }
 
     // Generate stable ID for deduplication
