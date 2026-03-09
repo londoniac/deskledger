@@ -1,0 +1,15 @@
+{
+  "name": "deskledger",
+  "private": true,
+  "workspaces": ["app", "server"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:app\"",
+    "dev:app": "cd app && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "build": "cd app && npm run build",
+    "start": "cd server && node index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

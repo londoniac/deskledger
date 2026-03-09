@@ -1,0 +1,49 @@
+import { Router } from "express";
+
+const router = Router();
+
+// GET /api/profile
+router.get("/", async (req, res, next) => {
+  try {
+    const { data, error } = await req.supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("id", req.userId)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/profile
+router.put("/", async (req, res, next) => {
+  try {
+    const allowed = [
+      "company_name", "company_reg", "tax_ref", "year_start", "year_end",
+      "seed_money", "tax_rate", "vat_registered", "vat_number",
+      "paypal_sandbox",
+    ];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    updates.updated_at = new Date().toISOString();
+
+    const { data, error } = await req.supabase
+      .from("user_profiles")
+      .update(updates)
+      .eq("id", req.userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;
