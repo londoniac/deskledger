@@ -175,6 +175,9 @@ export default function Settings({ onProfileUpdate }) {
         </Card>
       )}
 
+      {/* PayPal Integration (Business only) */}
+      {isBusiness && <PayPalSettings profile={profile} />}
+
       {/* Save */}
       <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
         <Button onClick={save} disabled={saving}>
@@ -210,5 +213,117 @@ export default function Settings({ onProfileUpdate }) {
         </div>
       </Card>
     </div>
+  );
+}
+
+function PayPalSettings({ profile }) {
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [sandbox, setSandbox] = useState(false);
+  const [hasCredentials, setHasCredentials] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [message, setMessage] = useState({ type: "", text: "" });
+
+  // Check addon access
+  const status = profile?.subscription_status;
+  const addons = profile?.addons || [];
+  const hasAccess = addons.includes("paypal") || status === "trial" || status === "admin";
+
+  useEffect(() => {
+    if (hasAccess) {
+      api.paypal.hasCredentials()
+        .then((r) => { setHasCredentials(r.hasCredentials); setSandbox(r.sandbox); })
+        .catch(() => {});
+    }
+  }, [hasAccess]);
+
+  const testConnection = async () => {
+    if (!clientId || !clientSecret) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.paypal.test(clientId, clientSecret, sandbox);
+      setTestResult(result.success ? "success" : "error");
+    } catch (e) {
+      setTestResult("error");
+      setMessage({ type: "error", text: e.message });
+    }
+    setTesting(false);
+  };
+
+  const saveCredentials = async () => {
+    if (!clientId || !clientSecret) return;
+    setSaving(true);
+    try {
+      await api.paypal.saveCredentials(clientId, clientSecret, sandbox);
+      setHasCredentials(true);
+      setMessage({ type: "success", text: "PayPal credentials saved securely" });
+      setClientId("");
+      setClientSecret("");
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+    setSaving(false);
+  };
+
+  if (!hasAccess) {
+    return (
+      <Card style={{ marginBottom: 20, opacity: 0.6 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>PayPal Integration</h3>
+        <p style={{ fontSize: 13, color: PALETTE.textMuted }}>
+          PayPal sync is available as an addon (+£2.99/mo). Upgrade your plan to enable it.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 4 }}>PayPal Integration</h3>
+      <p style={{ fontSize: 12, color: PALETTE.textMuted, marginBottom: 16 }}>
+        Connect your PayPal to auto-sync transactions. Credentials are encrypted with AES-256.
+      </p>
+
+      {message.type === "error" && <ErrorMsg message={message.text} />}
+      {message.type === "success" && <SuccessMsg message={message.text} />}
+
+      {hasCredentials && (
+        <div style={{ padding: "10px 14px", background: PALETTE.accentDim, borderRadius: 8, color: PALETTE.accent, fontSize: 13, marginBottom: 16 }}>
+          PayPal credentials are saved. You can sync from the Import tab. Enter new credentials below to update them.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div>
+          <Label>Client ID</Label>
+          <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Your PayPal Client ID" />
+        </div>
+        <div>
+          <Label>Client Secret</Label>
+          <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="Your PayPal Client Secret" />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+        <Toggle value={sandbox} onChange={setSandbox} label="Sandbox Mode" />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Button variant="outline" onClick={testConnection} disabled={!clientId || !clientSecret || testing}>
+          {testing ? "Testing..." : "Test Connection"}
+        </Button>
+        <Button onClick={saveCredentials} disabled={!clientId || !clientSecret || saving}>
+          {saving ? "Saving..." : "Save Credentials"}
+        </Button>
+        {testResult === "success" && <span style={{ fontSize: 12, color: PALETTE.accent }}>Connected successfully</span>}
+        {testResult === "error" && <span style={{ fontSize: 12, color: PALETTE.expense }}>Connection failed</span>}
+      </div>
+
+      <p style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 12 }}>
+        Get your credentials from developer.paypal.com → My Apps & Credentials → Create App
+      </p>
+    </Card>
   );
 }

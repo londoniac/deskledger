@@ -1,8 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES } from "../lib/constants.js";
 import { fmt, fmtDate } from "../lib/format.js";
-import { Card, Button, Badge, ErrorMsg, SuccessMsg } from "../components/ui.jsx";
+import { Card, Button, Badge, Input, Label, ErrorMsg, SuccessMsg } from "../components/ui.jsx";
+import { useWorkspace } from "../App.jsx";
 
 export default function Import() {
   const [file, setFile] = useState(null);
@@ -164,7 +165,10 @@ export default function Import() {
         </Card>
       )}
 
-      {/* Manual entry */}
+      {/* PayPal Sync (Business mode only) */}
+      <PayPalSync />
+
+      {/* Tips */}
       <Card>
         <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Tips</h3>
         <ul style={{ fontSize: 13, color: PALETTE.textDim, lineHeight: 1.8, paddingLeft: 20, margin: 0 }}>
@@ -176,5 +180,90 @@ export default function Import() {
         </ul>
       </Card>
     </div>
+  );
+}
+
+function PayPalSync() {
+  const { mode } = useWorkspace();
+  const [hasCredentials, setHasCredentials] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [message, setMessage] = useState({ type: "", text: "" });
+
+  // Default: last 90 days
+  const today = new Date().toISOString().split("T")[0];
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().split("T")[0];
+  const [startDate, setStartDate] = useState(ninetyDaysAgo);
+  const [endDate, setEndDate] = useState(today);
+
+  useEffect(() => {
+    if (mode === "business") {
+      api.paypal.hasCredentials()
+        .then((r) => setHasCredentials(r.hasCredentials))
+        .catch(() => {});
+    }
+  }, [mode]);
+
+  if (mode !== "business") return null;
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setResult(null);
+    setMessage({ type: "", text: "" });
+    try {
+      const res = await api.paypal.sync(
+        new Date(startDate).toISOString(),
+        new Date(endDate).toISOString()
+      );
+      setResult(res);
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+    setSyncing(false);
+  };
+
+  if (!hasCredentials) {
+    return (
+      <Card style={{ marginBottom: 20, opacity: 0.7 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 4 }}>PayPal Sync</h3>
+        <p style={{ fontSize: 13, color: PALETTE.textMuted }}>
+          Set up your PayPal API credentials in Settings to enable automatic sync.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 12 }}>PayPal Sync</h3>
+
+      {message.type === "error" && <ErrorMsg message={message.text} />}
+
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 12 }}>
+        <div>
+          <Label>From</Label>
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ width: 160 }} />
+        </div>
+        <div>
+          <Label>To</Label>
+          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ width: 160 }} />
+        </div>
+        <Button onClick={handleSync} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync from PayPal"}
+        </Button>
+      </div>
+
+      {result && (
+        <div style={{ padding: "12px 16px", background: PALETTE.accentDim, borderRadius: 8, fontSize: 13, color: PALETTE.accent }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Sync complete</div>
+          <div>Fetched {result.totalFetched} raw transactions from PayPal</div>
+          <div>{result.kept} kept after filtering ({result.skipped} internal entries skipped, {result.currencyDupes} currency duplicates removed)</div>
+          <div style={{ fontWeight: 600, marginTop: 4 }}>
+            {result.newImported} new transactions imported
+            {result.alreadyExisted > 0 && `, ${result.alreadyExisted} already existed`}
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }

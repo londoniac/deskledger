@@ -70,6 +70,15 @@ const api = {
     transactionsCsvUrl: () => `${API_URL}/api/export/transactions.csv`,
   },
 
+  paypal: {
+    test: (client_id, client_secret, sandbox) => request("/api/paypal/test", { method: "POST", body: JSON.stringify({ client_id, client_secret, sandbox }) }),
+    saveCredentials: (client_id, client_secret, sandbox) => request("/api/paypal/save-credentials", { method: "POST", body: JSON.stringify({ client_id, client_secret, sandbox }) }),
+    hasCredentials: () => request("/api/paypal/has-credentials"),
+    sync: (start_date, end_date) => request("/api/paypal/sync", { method: "POST", body: JSON.stringify({ start_date, end_date }) }),
+    getTransactions: () => request("/api/paypal/transactions"),
+    deleteTransaction: (id) => request(`/api/paypal/transactions/${id}`, { method: "DELETE" }),
+  },
+
   debts: {
     getAll: () => request("/api/debts"),
     save: (debt) => request("/api/debts", { method: "POST", body: JSON.stringify(debt) }),

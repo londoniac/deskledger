@@ -12,6 +12,7 @@ import importRoutes from "./routes/import.js";
 import exportRoutes from "./routes/export.js";
 import debtRoutes from "./routes/debts.js";
 import budgetRoutes from "./routes/budgets.js";
+import paypalRoutes from "./routes/paypal.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -47,6 +48,7 @@ app.use("/api/import", importRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/debts", debtRoutes);
 app.use("/api/budgets", budgetRoutes);
+app.use("/api/paypal", paypalRoutes);
 
 // ─── Error Handler ───
 app.use((err, _req, res, _next) => {
