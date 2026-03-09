@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "./hooks/useAuth.jsx";
 import { PALETTE } from "./lib/constants.js";
+import api from "./lib/api.js";
 import Login from "./pages/Login.jsx";
 import Signup from "./pages/Signup.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -19,6 +20,13 @@ export default function App() {
   const { user, loading, signOut } = useAuth();
   const [authPage, setAuthPage] = useState("login");
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [companyName, setCompanyName] = useState("");
+
+  useEffect(() => {
+    if (user) {
+      api.profile.get().then((p) => setCompanyName(p.company_name || "")).catch(() => {});
+    }
+  }, [user]);
 
   if (loading) {
     return (
@@ -42,7 +50,10 @@ export default function App() {
         background: PALETTE.card, borderBottom: `1px solid ${PALETTE.border}`,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: PALETTE.accent, letterSpacing: -0.5 }}>DeskLedger</h1>
+          <h1 style={{ fontSize: 18, fontWeight: 700, color: PALETTE.accent, letterSpacing: -0.5 }}>
+            DeskLedger
+            {companyName && <span style={{ fontSize: 12, fontWeight: 500, color: PALETTE.textDim, marginLeft: 12 }}>{companyName}</span>}
+          </h1>
           <div style={{ display: "flex", gap: 4 }}>
             {TABS.map((tab) => (
               <button
@@ -76,7 +87,7 @@ export default function App() {
         {activeTab === "dashboard" && <Dashboard />}
         {activeTab === "transactions" && <Transactions />}
         {activeTab === "import" && <Import />}
-        {activeTab === "settings" && <Settings />}
+        {activeTab === "settings" && <Settings onProfileUpdate={(p) => setCompanyName(p.company_name || "")} />}
       </div>
     </div>
   );

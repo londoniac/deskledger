@@ -9,7 +9,7 @@ const TAX_RATES = [
   { value: "26.5", label: "26.5% (2026+)" },
 ];
 
-export default function Settings() {
+export default function Settings({ onProfileUpdate }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,6 +62,7 @@ export default function Settings() {
         year_end: form.year_end || null,
       };
       await api.profile.update(data);
+      onProfileUpdate?.(data);
       setMessage({ type: "success", text: "Settings saved" });
     } catch (e) {
       setMessage({ type: "error", text: e.message });
