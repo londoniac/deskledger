@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import api from "../lib/api.js";
 import { PALETTE } from "../lib/constants.js";
 import { Card, Button, Input, Label, Select, ErrorMsg, SuccessMsg, Spinner } from "../components/ui.jsx";
+import { useWorkspace } from "../App.jsx";
 
 const TAX_RATES = [
   { value: "19", label: "19% (Small profits)" },
@@ -31,13 +32,13 @@ function Toggle({ value, onChange, label }) {
 }
 
 export default function Settings({ onProfileUpdate }) {
+  const { mode } = useWorkspace();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
   const [form, setForm] = useState({
-    account_type: "business",
     company_name: "",
     company_reg: "",
     tax_ref: "",
@@ -54,7 +55,6 @@ export default function Settings({ onProfileUpdate }) {
       .then((p) => {
         setProfile(p);
         setForm({
-          account_type: p.account_type || "business",
           company_name: p.company_name || "",
           company_reg: p.company_reg || "",
           tax_ref: p.tax_ref || "",
@@ -71,7 +71,7 @@ export default function Settings({ onProfileUpdate }) {
   }, []);
 
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
-  const isBusiness = form.account_type === "business";
+  const isBusiness = mode === "business";
 
   const save = async () => {
     setSaving(true);
@@ -104,28 +104,6 @@ export default function Settings({ onProfileUpdate }) {
     <div style={{ maxWidth: 700 }}>
       {message.type === "error" && <ErrorMsg message={message.text} />}
       {message.type === "success" && <SuccessMsg message={message.text} />}
-
-      {/* Account Type */}
-      <Card style={{ marginBottom: 20 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 16 }}>Account Type</h3>
-        <div style={{ display: "flex", gap: 8 }}>
-          {[{ id: "business", label: "Business", desc: "Ltd company, sole trader, HMRC categories" }, { id: "personal", label: "Personal", desc: "Track spending, savings & budgets" }].map((t) => (
-            <div
-              key={t.id}
-              onClick={() => update("account_type", t.id)}
-              style={{
-                flex: 1, padding: "14px 16px", borderRadius: 10, cursor: "pointer",
-                border: `2px solid ${form.account_type === t.id ? PALETTE.accent : PALETTE.border}`,
-                background: form.account_type === t.id ? PALETTE.accent + "10" : "transparent",
-                transition: "all 0.2s",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 600, color: form.account_type === t.id ? PALETTE.accent : PALETTE.text }}>{t.label}</div>
-              <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 2 }}>{t.desc}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
 
       {/* Company / Personal Details */}
       <Card style={{ marginBottom: 20 }}>

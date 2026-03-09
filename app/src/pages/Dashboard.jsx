@@ -4,8 +4,10 @@ import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PIE_COLORS } from "../lib/constants.js";
 import { fmt, r2 } from "../lib/format.js";
 import { Card, StatCard, Spinner } from "../components/ui.jsx";
+import { useWorkspace } from "../App.jsx";
 
 export default function Dashboard() {
+  const { mode } = useWorkspace();
   const [transactions, setTransactions] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,7 +22,7 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const isBusiness = (profile?.account_type || "business") === "business";
+  const isBusiness = mode === "business";
   const expenseCats = isBusiness ? EXPENSE_CATEGORIES : PERSONAL_EXPENSE_CATEGORIES;
 
   const stats = useMemo(() => {

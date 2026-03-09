@@ -3,8 +3,10 @@ import api from "../lib/api.js";
 import { PALETTE, PERSONAL_EXPENSE_CATEGORIES, EXPENSE_CATEGORIES } from "../lib/constants.js";
 import { fmt, r2 } from "../lib/format.js";
 import { Card, Button, Input, Label, Spinner, ErrorMsg, SuccessMsg } from "../components/ui.jsx";
+import { useWorkspace } from "../App.jsx";
 
 export default function Budget() {
+  const { mode } = useWorkspace();
   const [profile, setProfile] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [incomeSources, setIncomeSources] = useState([]);
@@ -53,7 +55,7 @@ export default function Budget() {
     }
   }, [month]);
 
-  const isBusiness = (profile?.account_type || "business") === "business";
+  const isBusiness = mode === "business";
   const defaultCats = isBusiness ? EXPENSE_CATEGORIES : PERSONAL_EXPENSE_CATEGORIES;
   const allExpenseCats = [...defaultCats.filter((c) => c.id !== "transfer"), ...customCategories.filter((c) => c.type === "expense")];
 

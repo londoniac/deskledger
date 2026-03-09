@@ -3,8 +3,10 @@ import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES } from "../lib/constants.js";
 import { fmt, r2, fmtDate } from "../lib/format.js";
 import { Card, Badge, Button, Select, Input, ErrorMsg, SuccessMsg, Spinner } from "../components/ui.jsx";
+import { useWorkspace } from "../App.jsx";
 
 export default function Transactions() {
+  const { mode } = useWorkspace();
   const [transactions, setTransactions] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,7 @@ export default function Transactions() {
       .finally(() => setLoading(false));
   }, []);
 
-  const isBusiness = (profile?.account_type || "business") === "business";
+  const isBusiness = mode === "business";
   const expenseCats = isBusiness ? EXPENSE_CATEGORIES : PERSONAL_EXPENSE_CATEGORIES;
   const incomeCats = isBusiness ? INCOME_CATEGORIES : PERSONAL_INCOME_CATEGORIES;
   const ALL_CATEGORIES = [...expenseCats, ...incomeCats];
