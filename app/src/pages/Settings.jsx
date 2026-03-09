@@ -185,6 +185,9 @@ export default function Settings({ onProfileUpdate }) {
         </Button>
       </div>
 
+      {/* Data Maintenance */}
+      {isBusiness && <DataMaintenance />}
+
       {/* Export */}
       <Card style={{ marginBottom: 20 }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Export</h3>
@@ -324,6 +327,53 @@ function PayPalSettings({ profile }) {
       <p style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 12 }}>
         Get your credentials from developer.paypal.com → My Apps & Credentials → Create App
       </p>
+    </Card>
+  );
+}
+
+function DataMaintenance() {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const runFix = async () => {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await api.transactions.fixExclusions();
+      setResult(res);
+    } catch (e) {
+      setResult({ error: e.message });
+    }
+    setRunning(false);
+  };
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Data Maintenance</h3>
+      <p style={{ fontSize: 13, color: PALETTE.textDim, marginBottom: 12 }}>
+        Fix transaction exclusions: marks seed capital, failed payments, reversals, and inter-account transfers
+        so they don't affect your P&L calculations.
+      </p>
+      <Button variant="outline" onClick={runFix} disabled={running}>
+        {running ? "Running..." : "Fix Transaction Exclusions"}
+      </Button>
+      {result && !result.error && (
+        <div style={{ marginTop: 12, padding: "10px 14px", background: PALETTE.accentDim, borderRadius: 8, fontSize: 13, color: PALETTE.accent }}>
+          <div style={{ fontWeight: 600 }}>Fixed {result.fixed} of {result.total} transactions</div>
+          {result.details?.map((d, i) => (
+            <div key={i} style={{ fontSize: 12, marginTop: 4, color: d.status === "fixed" ? PALETTE.accent : PALETTE.danger }}>
+              {d.status === "fixed" ? "Fixed" : "Error"}: {d.description}
+              {d.applied?.exclude_reason && ` → ${d.applied.exclude_reason}`}
+              {d.applied?.category && ` (${d.applied.category})`}
+            </div>
+          ))}
+        </div>
+      )}
+      {result?.error && (
+        <div style={{ marginTop: 12, padding: "10px 14px", background: PALETTE.dangerDim, borderRadius: 8, fontSize: 13, color: PALETTE.danger }}>
+          Error: {result.error}
+        </div>
+      )}
     </Card>
   );
 }

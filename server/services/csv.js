@@ -77,6 +77,37 @@ export function normalizeTransactions(rows, source = "bank") {
     // Generate stable ID for deduplication
     const stableId = `${source}-${normDate}-${description.slice(0, 40)}-${amount.toFixed(2)}-${idx}`;
 
+    // Detect transactions that should be excluded
+    let excluded = false;
+    let excludeReason = null;
+    const descLower = description.toLowerCase();
+
+    // Seed capital / director's loan
+    if (type === "income" && (descLower.includes("seed") || descLower.includes("capital") || descLower.includes("lon in as co"))) {
+      excluded = true;
+      excludeReason = "capital_injection";
+    }
+    // PayPal verification deposit
+    if (type === "income" && amount <= 0.05 && (descLower.includes("paypal") || descLower.includes("verification"))) {
+      excluded = true;
+      excludeReason = "verification_deposit";
+    }
+    // Inter-account transfers (Monzo→PayPal)
+    if (type === "expense" && descLower.includes("paypal") && !descLower.includes("failed") && !descLower.includes("author")) {
+      excluded = true;
+      excludeReason = "inter_account_transfer";
+    }
+    // Failed payments
+    if (descLower.includes("failed") && !descLower.includes("reversal")) {
+      excluded = true;
+      excludeReason = "failed_payment";
+    }
+    // Reversals
+    if (descLower.includes("reversal") || descLower.includes("relates to a previous")) {
+      excluded = true;
+      excludeReason = "reversal";
+    }
+
     return {
       id: stableId,
       date: normDate,
@@ -89,6 +120,8 @@ export function normalizeTransactions(rows, source = "bank") {
       vatAmount: 0,
       notes: "",
       reconciled: false,
+      excluded,
+      excludeReason,
       monzoId: source === "bank" && sourceId ? sourceId : undefined,
     };
   }).filter((t) => t.amount > 0 && t.description);

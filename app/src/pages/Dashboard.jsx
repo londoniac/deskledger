@@ -44,21 +44,24 @@ export default function Dashboard() {
     const totalCapital = r2(capitalTxns.reduce((s, t) => s + Number(t.amount), 0));
     let companyExpenses = r2(expenses.reduce((s, t) => s + Number(t.amount), 0));
 
-    // PayPal expenses (payouts + fees)
+    // PayPal expenses: author payouts + fees (matches desktop app logic)
+    // PayPal transactions use types: transfer_in, author_payout, fee, refund, other
     let paypalExpenses = 0;
+    let ppAuthorPayouts = 0;
+    let ppFees = 0;
     if (isBusiness && paypalTxns.length > 0) {
-      paypalExpenses = r2(paypalTxns
-        .filter((t) => t.type === "expense")
-        .reduce((s, t) => s + Number(t.amount), 0));
+      ppAuthorPayouts = r2(paypalTxns
+        .filter((t) => t.type === "author_payout")
+        .reduce((s, t) => s + Number(t.gbp_amount || t.amount), 0));
+      ppFees = r2(paypalTxns
+        .filter((t) => t.type === "fee")
+        .reduce((s, t) => s + Number(t.gbp_amount || t.amount), 0));
+      paypalExpenses = r2(ppAuthorPayouts + ppFees);
     }
 
-    // PayPal income (payments received)
+    // PayPal income is NOT counted in trading income — it's transfer_in from bank
+    // (the bank side is already excluded as inter-account transfer)
     let paypalIncome = 0;
-    if (isBusiness && paypalTxns.length > 0) {
-      paypalIncome = r2(paypalTxns
-        .filter((t) => t.type === "income")
-        .reduce((s, t) => s + Number(t.amount), 0));
-    }
 
     const combinedIncome = r2(totalIncome + paypalIncome);
     const combinedExpenses = r2(companyExpenses + paypalExpenses);

@@ -43,6 +43,7 @@ const api = {
     save: (txns) => request("/api/transactions", { method: "POST", body: JSON.stringify(txns) }),
     update: (id, data) => request(`/api/transactions/by-id?id=${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id) => request(`/api/transactions/by-id?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
+    fixExclusions: () => request("/api/transactions/fix-exclusions", { method: "POST" }),
   },
 
   invoices: {

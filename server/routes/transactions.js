@@ -104,4 +104,114 @@ router.delete("/by-id", async (req, res, next) => {
   }
 });
 
+// POST /api/transactions/fix-exclusions — one-time fix to match desktop app rules
+// Applies exclusion rules: seed capital, failed payments/reversals, inter-account transfers, verification deposits
+router.post("/fix-exclusions", async (req, res, next) => {
+  try {
+    // Get all user transactions
+    const { data: txns, error: fetchErr } = await req.supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", req.userId);
+
+    if (fetchErr) throw fetchErr;
+    if (!txns || txns.length === 0) return res.json({ fixed: 0, details: [] });
+
+    const fixes = [];
+
+    for (const t of txns) {
+      const desc = (t.description || "").toLowerCase();
+      const amount = Number(t.amount);
+      let update = null;
+
+      // 1. Seed capital — large income with "seed" or from a known parent company
+      if (t.type === "income" && !t.excluded &&
+          (desc.includes("seed") || desc.includes("capital") || desc.includes("lon in as co"))) {
+        update = {
+          excluded: true,
+          exclude_reason: "capital_injection",
+          category: "capital",
+          notes: t.notes || "Seed capital / director's loan — excluded from trading income",
+        };
+      }
+
+      // 2. PayPal verification deposits (tiny amounts from PayPal)
+      if (t.type === "income" && !t.excluded && amount <= 0.05 &&
+          (desc.includes("paypal") || desc.includes("verification"))) {
+        update = {
+          excluded: true,
+          exclude_reason: "verification_deposit",
+          notes: t.notes || "PayPal verification deposit — not real revenue",
+        };
+      }
+
+      // 3. Inter-account transfers: Monzo→PayPal (expense side)
+      if (t.type === "expense" && !t.excluded && t.source === "bank" &&
+          desc.includes("paypal") && !desc.includes("failed") && !desc.includes("author")) {
+        update = {
+          excluded: true,
+          exclude_reason: "inter_account_transfer",
+          category: "transfer",
+          notes: t.notes || "Inter-account transfer Monzo→PayPal — not a real expense",
+        };
+      }
+
+      // 4. Failed payments — expense followed by immediate reversal
+      // Detect "failed" in description on expense transactions
+      if (t.type === "expense" && !t.excluded && t.source === "bank" &&
+          (desc.includes("failed") || desc.includes("relates to a previous"))) {
+        update = {
+          excluded: true,
+          exclude_reason: "failed_payment",
+          notes: t.notes || "Failed payment — excluded (reversed immediately)",
+        };
+      }
+
+      // 5. Reversals — income that's a reversal of a failed payment
+      if (t.type === "income" && !t.excluded && t.source === "bank" &&
+          (desc.includes("reversal") || desc.includes("relates to a previous") || desc.includes("failed"))) {
+        update = {
+          excluded: true,
+          exclude_reason: "reversal",
+          notes: t.notes || "Reversal of failed payment — excluded",
+        };
+      }
+
+      // 6. Set correct categories for known expenses
+      if (!t.excluded && t.type === "expense" && !t.category) {
+        const d = desc;
+        if (d.includes("supabase") || d.includes("resend") || d.includes("google") ||
+            d.includes("github") || d.includes("software") || d.includes("adobe")) {
+          update = { ...(update || {}), category: "subscriptions" };
+        }
+      }
+
+      // 7. Set sales category for Stripe payouts
+      if (!t.excluded && t.type === "income" && !t.category &&
+          desc.includes("stripe")) {
+        update = { ...(update || {}), category: "sales" };
+      }
+
+      if (update) {
+        update.updated_at = new Date().toISOString();
+        const { error: updateErr } = await req.supabase
+          .from("transactions")
+          .update(update)
+          .eq("id", t.id)
+          .eq("user_id", req.userId);
+
+        if (updateErr) {
+          fixes.push({ id: t.id, description: t.description, status: "error", error: updateErr.message });
+        } else {
+          fixes.push({ id: t.id, description: t.description, status: "fixed", applied: update });
+        }
+      }
+    }
+
+    res.json({ fixed: fixes.filter((f) => f.status === "fixed").length, total: txns.length, details: fixes });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
