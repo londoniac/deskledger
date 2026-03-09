@@ -62,9 +62,10 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-// PUT /api/transactions/:id
-router.put("/:id", async (req, res, next) => {
+// PUT /api/transactions/:id — use wildcard to support IDs with slashes
+router.put("/*", async (req, res, next) => {
   try {
+    const id = decodeURIComponent(req.params[0]);
     const updates = { ...req.body, updated_at: new Date().toISOString() };
     delete updates.id;
     delete updates.user_id;
@@ -72,7 +73,7 @@ router.put("/:id", async (req, res, next) => {
     const { data, error } = await req.supabase
       .from("transactions")
       .update(updates)
-      .eq("id", req.params.id)
+      .eq("id", id)
       .eq("user_id", req.userId)
       .select()
       .single();
@@ -84,13 +85,14 @@ router.put("/:id", async (req, res, next) => {
   }
 });
 
-// DELETE /api/transactions/:id
-router.delete("/:id", async (req, res, next) => {
+// DELETE /api/transactions/:id — use wildcard to support IDs with slashes
+router.delete("/*", async (req, res, next) => {
   try {
+    const id = decodeURIComponent(req.params[0]);
     const { error } = await req.supabase
       .from("transactions")
       .delete()
-      .eq("id", req.params.id)
+      .eq("id", id)
       .eq("user_id", req.userId);
 
     if (error) throw error;
