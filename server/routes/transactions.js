@@ -62,10 +62,11 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-// PUT /api/transactions/:id — use named wildcard to support IDs with slashes
-router.put("/:id(*)", async (req, res, next) => {
+// PUT /api/transactions/by-id?id=... — supports IDs with slashes
+router.put("/by-id", async (req, res, next) => {
   try {
-    const id = decodeURIComponent(req.params.id);
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: "Missing id query parameter" });
     const updates = { ...req.body, updated_at: new Date().toISOString() };
     delete updates.id;
     delete updates.user_id;
@@ -85,10 +86,11 @@ router.put("/:id(*)", async (req, res, next) => {
   }
 });
 
-// DELETE /api/transactions/:id — use named wildcard to support IDs with slashes
-router.delete("/:id(*)", async (req, res, next) => {
+// DELETE /api/transactions/by-id?id=... — supports IDs with slashes
+router.delete("/by-id", async (req, res, next) => {
   try {
-    const id = decodeURIComponent(req.params.id);
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: "Missing id query parameter" });
     const { error } = await req.supabase
       .from("transactions")
       .delete()
