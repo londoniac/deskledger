@@ -170,6 +170,45 @@ export default function Transactions() {
     }
   };
 
+  // Quick-save category from inline dropdown
+  const quickSaveCategory = async (txnId, newCategory) => {
+    try {
+      const updated = await api.transactions.update(txnId, {
+        category: newCategory,
+        updated_at: new Date().toISOString(),
+      });
+      setTransactions((prev) => prev.map((t) => (t.id === txnId ? { ...t, ...updated } : t)));
+
+      // Learn: save category rule
+      const original = transactions.find((t) => t.id === txnId);
+      if (original && newCategory && newCategory !== original.category && original.description) {
+        const words = original.description.toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 3).join(" ");
+        if (words) {
+          api.budgets.saveRule({ pattern: words, category: newCategory, type: original.type }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
+  // Quick-save type from inline dropdown
+  const quickSaveType = async (txnId, newType) => {
+    try {
+      const updates = { type: newType, updated_at: new Date().toISOString() };
+      // If changing to/from transfer, update category too
+      if (newType === "transfer") updates.category = "transfer";
+      else {
+        const txn = transactions.find((t) => t.id === txnId);
+        if (txn?.category === "transfer") updates.category = "";
+      }
+      const updated = await api.transactions.update(txnId, updates);
+      setTransactions((prev) => prev.map((t) => (t.id === txnId ? { ...t, ...updated } : t)));
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
   const toggleExclude = async (t) => {
     try {
       const updated = await api.transactions.update(t.id, {
@@ -291,7 +330,7 @@ export default function Transactions() {
           />
           <Select
             value={typeFilter} onChange={setTypeFilter}
-            options={[{ value: "all", label: "All Types" }, { value: "income", label: "Income" }, { value: "expense", label: "Expenses" }]}
+            options={[{ value: "all", label: "All Types" }, { value: "income", label: "Income" }, { value: "expense", label: "Expenses" }, { value: "transfer", label: "Transfers" }]}
           />
           <Select
             value={categoryFilter} onChange={setCategoryFilter}
@@ -394,12 +433,40 @@ export default function Transactions() {
                             {(invoice || t.invoice_id) && <span style={{ fontSize: 10, color: PALETTE.accent }} title="Has invoice">&#128206;</span>}
                           </div>
                           <div><Badge color={t.source === "bank" ? PALETTE.blue : t.source === "paypal" ? PALETTE.cyan : PALETTE.textDim}>{t.source}</Badge></div>
-                          <div><Badge color={t.type === "income" ? PALETTE.income : PALETTE.expense}>{t.type}</Badge></div>
-                          <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : PALETTE.expense }}>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <select
+                              value={t.type}
+                              onChange={(e) => quickSaveType(t.id, e.target.value)}
+                              style={{
+                                background: "transparent", border: "none", cursor: "pointer",
+                                fontSize: 11, fontWeight: 600, textTransform: "uppercase",
+                                color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense,
+                                outline: "none", padding: "2px 0",
+                              }}
+                            >
+                              <option value="income">Income</option>
+                              <option value="expense">Expense</option>
+                              <option value="transfer">Transfer</option>
+                            </select>
+                          </div>
+                          <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense }}>
                             {fmt(t.amount)}
                           </div>
-                          <div style={{ fontSize: 12, color: t.category ? PALETTE.textDim : PALETTE.orange }}>
-                            {cat ? cat.label : t.category || "Uncategorised"}
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <select
+                              value={t.category || ""}
+                              onChange={(e) => quickSaveCategory(t.id, e.target.value)}
+                              style={{
+                                background: "transparent", border: "none", cursor: "pointer",
+                                fontSize: 12, outline: "none", padding: "2px 0", maxWidth: 130,
+                                color: t.category ? PALETTE.textDim : PALETTE.orange,
+                              }}
+                            >
+                              <option value="">Uncategorised</option>
+                              {(t.type === "income" ? incomeCats : t.type === "transfer" ? [{ id: "transfer", label: "Transfer" }] : expenseCats).map((c) => (
+                                <option key={c.id} value={c.id}>{c.label}</option>
+                              ))}
+                            </select>
                           </div>
                           <div style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => deleteTransaction(t.id)} title="Delete" style={{ background: "none", border: "none", color: PALETTE.textMuted, cursor: "pointer", fontSize: 13, padding: 2 }}>&#128465;</button>
@@ -418,17 +485,17 @@ export default function Transactions() {
                               <div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
                                   <div>
-                                    <div style={detailLabel}>Description</div>
-                                    <Input value={editData.description} onChange={(e) => setEditData({ ...editData, description: e.target.value })} />
+                                    <div style={detailLabel}>Description <span style={{ fontSize: 10, color: PALETTE.textMuted, fontWeight: 400 }}>(locked)</span></div>
+                                    <div style={{ ...detailValue, padding: "8px 12px", background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: 6, color: PALETTE.textDim }}>{editData.description}</div>
                                   </div>
                                   <div>
                                     <div style={detailLabel}>Type</div>
-                                    <Select value={editData.type} onChange={(v) => setEditData({ ...editData, type: v, category: "" })}
-                                      options={[{ value: "income", label: "Income" }, { value: "expense", label: "Expense" }]} style={{ width: "100%" }} />
+                                    <Select value={editData.type} onChange={(v) => setEditData({ ...editData, type: v, category: v === "transfer" ? "transfer" : "" })}
+                                      options={[{ value: "income", label: "Income" }, { value: "expense", label: "Expense" }, { value: "transfer", label: "Transfer" }]} style={{ width: "100%" }} />
                                   </div>
                                   <div>
-                                    <div style={detailLabel}>Amount (GBP)</div>
-                                    <Input type="number" value={editData.amount} onChange={(e) => setEditData({ ...editData, amount: e.target.value })} />
+                                    <div style={detailLabel}>Amount (GBP) <span style={{ fontSize: 10, color: PALETTE.textMuted, fontWeight: 400 }}>(locked)</span></div>
+                                    <div style={{ ...detailValue, padding: "8px 12px", background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: 6, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: PALETTE.textDim }}>{fmt(editData.amount)}</div>
                                   </div>
                                 </div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
@@ -437,7 +504,7 @@ export default function Transactions() {
                                     <Select
                                       value={editData.category}
                                       onChange={(v) => setEditData({ ...editData, category: v })}
-                                      options={[{ value: "", label: "Select..." }, ...(editData.type === "income" ? incomeCats : expenseCats).map((c) => ({ value: c.id, label: c.label }))]}
+                                      options={[{ value: "", label: "Select..." }, ...(editData.type === "transfer" ? [{ id: "transfer", label: "Transfer" }] : editData.type === "income" ? incomeCats : expenseCats).map((c) => ({ value: c.id, label: c.label }))]}
                                       style={{ width: "100%" }}
                                     />
                                   </div>
@@ -485,14 +552,14 @@ export default function Transactions() {
                                   </div>
                                   <div>
                                     <div style={detailLabel}>Amount</div>
-                                    <div style={{ ...detailValue, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : PALETTE.expense }}>
+                                    <div style={{ ...detailValue, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense }}>
                                       {fmt(t.amount)}
                                     </div>
                                   </div>
                                   <div>
                                     <div style={detailLabel}>Type</div>
                                     <div style={detailValue}>
-                                      <Badge color={t.type === "income" ? PALETTE.income : PALETTE.expense}>{t.type}</Badge>
+                                      <Badge color={t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense}>{t.type}</Badge>
                                     </div>
                                   </div>
                                 </div>
