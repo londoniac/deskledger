@@ -14,6 +14,7 @@ import Dividends from "./pages/Dividends.jsx";
 import DLA from "./pages/DLA.jsx";
 import VATReturns from "./pages/VATReturns.jsx";
 import FixedAssets from "./pages/FixedAssets.jsx";
+import Reports from "./pages/Reports.jsx";
 
 // Workspace context — available to all child components
 const WorkspaceContext = createContext({ mode: "business" });
@@ -27,6 +28,7 @@ const BUSINESS_TABS = [
   { id: "dla", label: "DLA" },
   { id: "assets", label: "Assets" },
   { id: "vat", label: "VAT" },
+  { id: "reports", label: "Reports" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -161,6 +163,7 @@ export default function App() {
           {activeTab === "dla" && <DLA />}
           {activeTab === "assets" && <FixedAssets />}
           {activeTab === "vat" && <VATReturns />}
+          {activeTab === "reports" && <Reports />}
           {activeTab === "settings" && <Settings onProfileUpdate={setProfile} />}
         </div>
       </div>

@@ -196,7 +196,7 @@ export default function Transactions() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["Date", "Description", "Source", "Type", "Amount", "Category", ""].map((h) => (
+                    {["Date", "Description", "Source", "Type", "Amount", "Category", "VAT", ""].map((h) => (
                       <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontSize: 11, color: PALETTE.textMuted, fontWeight: 600, borderBottom: `1px solid ${PALETTE.border}` }}>{h}</th>
                     ))}
                   </tr>
@@ -208,6 +208,17 @@ export default function Transactions() {
 
                     if (isEditing) {
                       const cats = editData.type === "income" ? incomeCats : expenseCats;
+                      const vatOpts = [
+                        { value: "0", label: "No VAT (0%)" },
+                        { value: "20", label: "Standard (20%)" },
+                        { value: "5", label: "Reduced (5%)" },
+                        { value: "-1", label: "Exempt" },
+                        { value: "-2", label: "Outside Scope" },
+                      ];
+                      const vatDisplay = Number(editData.vat_rate) < 0 ? String(editData.vat_rate) : String(Number(editData.vat_rate));
+                      const computedVat = Number(editData.vat_rate) > 0
+                        ? r2(Number(editData.amount) * (Number(editData.vat_rate) / (100 + Number(editData.vat_rate))))
+                        : 0;
                       return (
                         <tr key={t.id} style={{ background: PALETTE.bg }}>
                           <td style={{ padding: "8px 10px", fontSize: 13, color: PALETTE.textDim }}>{fmtDate(t.date)}</td>
@@ -221,9 +232,14 @@ export default function Transactions() {
                           <td style={{ padding: "8px 10px" }}>
                             <Input type="number" value={editData.amount} onChange={(e) => setEditData({ ...editData, amount: e.target.value })} style={{ width: 100 }} />
                           </td>
-                          <td style={{ padding: "8px 10px" }} colSpan={2}>
+                          <td style={{ padding: "8px 10px" }}>
                             <Select value={editData.category} onChange={(v) => setEditData({ ...editData, category: v })}
                               options={[{ value: "", label: "Select..." }, ...cats.map((c) => ({ value: c.id, label: c.label }))]} />
+                          </td>
+                          <td style={{ padding: "8px 10px" }}>
+                            <Select value={vatDisplay} onChange={(v) => setEditData({ ...editData, vat_rate: Number(v) })}
+                              options={vatOpts} style={{ width: 130 }} />
+                            {computedVat > 0 && <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2 }}>VAT: {fmt(computedVat)}</div>}
                           </td>
                           <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
                             <Button onClick={saveEdit} disabled={saving} style={{ marginRight: 4 }}>{saving ? "..." : "Save"}</Button>
@@ -254,6 +270,13 @@ export default function Transactions() {
                         </td>
                         <td style={{ padding: "8px 10px", fontSize: 12, color: t.category ? PALETTE.textDim : PALETTE.orange }}>
                           {cat ? cat.label : t.category || "Uncategorised"}
+                        </td>
+                        <td style={{ padding: "8px 10px", fontSize: 11, color: PALETTE.textDim, fontFamily: "JetBrains Mono, monospace" }}>
+                          {Number(t.vat_rate) > 0
+                            ? <><span style={{ color: PALETTE.textMuted }}>{t.vat_rate}%</span> <span>{fmt(t.vat_amount)}</span></>
+                            : Number(t.vat_rate) === -1 ? <span style={{ color: PALETTE.textMuted }}>Exempt</span>
+                            : Number(t.vat_rate) === -2 ? <span style={{ color: PALETTE.textMuted }}>N/A</span>
+                            : <span style={{ color: PALETTE.textMuted }}>—</span>}
                         </td>
                         <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
                           <button onClick={() => startEdit(t)} title="Edit" style={{ background: "none", border: "none", color: PALETTE.textMuted, cursor: "pointer", fontSize: 14, marginRight: 4 }}>✏️</button>
