@@ -24,6 +24,7 @@ router.put("/", async (req, res, next) => {
     const allowed = [
       "company_name", "company_reg", "tax_ref", "year_start", "year_end",
       "seed_money", "tax_rate", "vat_registered", "vat_number",
+      "vat_scheme", "vat_flat_rate", "vat_registration_date", "vat_quarter_start",
       "paypal_sandbox",
       "account_type",
     ];

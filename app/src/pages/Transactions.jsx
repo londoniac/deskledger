@@ -25,10 +25,24 @@ export default function Transactions() {
   const [editData, setEditData] = useState({});
 
   useEffect(() => {
-    Promise.all([api.transactions.getAll(), api.profile.get()])
-      .then(([txns, prof]) => { setTransactions(txns); setProfile(prof); })
-      .catch((e) => setMessage({ type: "error", text: e.message }))
-      .finally(() => setLoading(false));
+    async function load() {
+      try {
+        const [txnResult, profResult] = await Promise.allSettled([
+          api.transactions.getAll(),
+          api.profile.get(),
+        ]);
+
+        if (txnResult.status === "fulfilled") setTransactions(txnResult.value || []);
+        else setMessage({ type: "error", text: `Failed to load transactions: ${txnResult.reason?.message || "Unknown error"}` });
+
+        if (profResult.status === "fulfilled") setProfile(profResult.value);
+      } catch (e) {
+        setMessage({ type: "error", text: e.message });
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, []);
 
   const isBusiness = mode === "business";

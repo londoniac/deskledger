@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PIE_COLORS } from "../lib/constants.js";
 import { fmt, r2 } from "../lib/format.js";
-import { Card, StatCard, Spinner } from "../components/ui.jsx";
+import { Card, StatCard, Spinner, ErrorMsg } from "../components/ui.jsx";
 import { useWorkspace } from "../App.jsx";
 
 export default function Dashboard() {
@@ -13,21 +13,32 @@ export default function Dashboard() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState("");
+
   useEffect(() => {
-    const fetches = [api.transactions.getAll(), api.profile.get()];
-    if (mode === "business") {
-      fetches.push(
-        api.paypal.getTransactions().catch(() => [])
-      );
+    async function load() {
+      try {
+        // Fetch independently so one failure doesn't block others
+        const [txnResult, profResult, ppResult] = await Promise.allSettled([
+          api.transactions.getAll(),
+          api.profile.get(),
+          mode === "business" ? api.paypal.getTransactions() : Promise.resolve([]),
+        ]);
+
+        if (txnResult.status === "fulfilled") setTransactions(txnResult.value || []);
+        else setError(`Failed to load transactions: ${txnResult.reason?.message || "Unknown error"}`);
+
+        if (profResult.status === "fulfilled") setProfile(profResult.value);
+        else console.warn("Profile fetch failed:", profResult.reason);
+
+        if (ppResult.status === "fulfilled") setPaypalTxns(ppResult.value || []);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
     }
-    Promise.all(fetches)
-      .then(([txns, prof, pp]) => {
-        setTransactions(txns);
-        setProfile(prof);
-        if (pp) setPaypalTxns(pp);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    load();
   }, [mode]);
 
   const isBusiness = mode === "business";
@@ -131,6 +142,7 @@ export default function Dashboard() {
 
   return (
     <div>
+      {error && <ErrorMsg message={error} />}
       {/* Stats row */}
       <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
         <StatCard label={isBusiness ? "Trading Income" : "Money In"} value={fmt(stats.income)} sub={`${stats.incomeCount} transactions`} color={PALETTE.income} />
