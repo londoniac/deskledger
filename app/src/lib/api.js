@@ -52,6 +52,20 @@ const api = {
     update: (id, data) => request(`/api/invoices/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id) => request(`/api/invoices/${id}`, { method: "DELETE" }),
     getFileUrl: (id) => request(`/api/invoices/${id}/file`),
+    uploadFile: async (id, file) => {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/api/invoices/${id}/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type,
+          "X-File-Name": file.name,
+          Authorization: `Bearer ${token}`,
+        },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
   },
 
   expenses: {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES } from "../lib/constants.js";
 import { fmt, r2, fmtDate } from "../lib/format.js";
@@ -28,22 +28,50 @@ export default function Transactions() {
     return next;
   });
 
+  // Expanded detail rows
+  const [expanded, setExpanded] = useState(new Set());
+  const toggleExpand = (id) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+    // Close edit if expanding a different row
+    if (editId && editId !== id) setEditId(null);
+  };
+
   // Editing
   const [editId, setEditId] = useState(null);
   const [editData, setEditData] = useState({});
 
+  // Invoice state per transaction
+  const [invoiceMap, setInvoiceMap] = useState({}); // txnId -> invoice object
+  const [uploading, setUploading] = useState(null); // txnId currently uploading
+  const fileInputRef = useRef(null);
+  const [uploadTarget, setUploadTarget] = useState(null); // txnId for file input
+
   useEffect(() => {
     async function load() {
       try {
-        const [txnResult, profResult] = await Promise.allSettled([
+        const [txnResult, profResult, invResult] = await Promise.allSettled([
           api.transactions.getAll(),
           api.profile.get(),
+          api.invoices.getAll(),
         ]);
 
         if (txnResult.status === "fulfilled") setTransactions(txnResult.value || []);
         else setMessage({ type: "error", text: `Failed to load transactions: ${txnResult.reason?.message || "Unknown error"}` });
 
         if (profResult.status === "fulfilled") setProfile(profResult.value);
+
+        // Build invoice map keyed by transaction_id
+        if (invResult.status === "fulfilled" && invResult.value) {
+          const map = {};
+          invResult.value.forEach((inv) => {
+            if (inv.transaction_id) map[inv.transaction_id] = inv;
+          });
+          setInvoiceMap(map);
+        }
       } catch (e) {
         setMessage({ type: "error", text: e.message });
       } finally {
@@ -97,6 +125,8 @@ export default function Transactions() {
       notes: t.notes || "",
       excluded: t.excluded || false,
     });
+    // Make sure it's expanded
+    setExpanded((prev) => new Set(prev).add(t.id));
   };
 
   const saveEdit = async () => {
@@ -133,6 +163,7 @@ export default function Transactions() {
     try {
       await api.transactions.delete(id);
       setTransactions((prev) => prev.filter((t) => t.id !== id));
+      setExpanded((prev) => { const n = new Set(prev); n.delete(id); return n; });
       setMessage({ type: "success", text: "Transaction deleted" });
     } catch (e) {
       setMessage({ type: "error", text: e.message });
@@ -152,10 +183,105 @@ export default function Transactions() {
     }
   };
 
+  // Invoice upload
+  const handleFileSelect = (txnId) => {
+    setUploadTarget(txnId);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadTarget) return;
+    e.target.value = ""; // reset input
+
+    const txn = transactions.find((t) => t.id === uploadTarget);
+    if (!txn) return;
+
+    setUploading(uploadTarget);
+    setMessage({ type: "", text: "" });
+    try {
+      // Create or get existing invoice record linked to this transaction
+      let invoice = invoiceMap[uploadTarget];
+      if (!invoice) {
+        invoice = await api.invoices.save({
+          id: crypto.randomUUID(),
+          file_name: file.name,
+          upload_date: new Date().toISOString().split("T")[0],
+          supplier: txn.description,
+          description: txn.description,
+          amount_gbp: txn.amount,
+          category: txn.category || "other",
+          transaction_id: txn.id,
+        });
+      }
+
+      // Upload the actual file
+      const updated = await api.invoices.uploadFile(invoice.id, file);
+      setInvoiceMap((prev) => ({ ...prev, [uploadTarget]: updated }));
+
+      // Link invoice to transaction if not already
+      if (!txn.invoice_id) {
+        const txnUpdated = await api.transactions.update(txn.id, {
+          invoice_id: invoice.id,
+          updated_at: new Date().toISOString(),
+        });
+        setTransactions((prev) => prev.map((t) => (t.id === txn.id ? { ...t, ...txnUpdated } : t)));
+      }
+
+      setMessage({ type: "success", text: `Invoice "${file.name}" uploaded` });
+    } catch (err) {
+      setMessage({ type: "error", text: `Upload failed: ${err.message}` });
+    }
+    setUploading(null);
+    setUploadTarget(null);
+  };
+
+  const viewInvoice = async (invoiceId) => {
+    try {
+      const { url } = await api.invoices.getFileUrl(invoiceId);
+      window.open(url, "_blank");
+    } catch (err) {
+      setMessage({ type: "error", text: `Could not get file: ${err.message}` });
+    }
+  };
+
+  const removeInvoice = async (txnId, invoiceId) => {
+    if (!confirm("Remove this invoice?")) return;
+    try {
+      await api.invoices.delete(invoiceId);
+      setInvoiceMap((prev) => {
+        const next = { ...prev };
+        delete next[txnId];
+        return next;
+      });
+      // Unlink from transaction
+      const txnUpdated = await api.transactions.update(txnId, {
+        invoice_id: null,
+        updated_at: new Date().toISOString(),
+      });
+      setTransactions((prev) => prev.map((t) => (t.id === txnId ? { ...t, ...txnUpdated } : t)));
+      setMessage({ type: "success", text: "Invoice removed" });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
+  };
+
   if (loading) return <Spinner />;
+
+  const detailLabel = { fontSize: 11, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 2 };
+  const detailValue = { fontSize: 13, color: PALETTE.text, marginBottom: 12 };
 
   return (
     <div>
+      {/* Hidden file input for invoice uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,image/*"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+      />
+
       {/* Filters */}
       <Card style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -205,7 +331,7 @@ export default function Transactions() {
 
           return (
             <Card key={group.key} style={{ marginBottom: 16 }}>
-              {/* Month header — clickable to collapse */}
+              {/* Month header */}
               <div
                 onClick={() => toggleMonth(group.key)}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: collapsed.has(group.key) ? 0 : 16 }}
@@ -222,103 +348,274 @@ export default function Transactions() {
               </div>
 
               {/* Transaction rows */}
-              {!collapsed.has(group.key) && <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    {["Date", "Description", "Source", "Type", "Amount", "Category", "VAT", ""].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontSize: 11, color: PALETTE.textMuted, fontWeight: 600, borderBottom: `1px solid ${PALETTE.border}` }}>{h}</th>
+              {!collapsed.has(group.key) && (
+                <div>
+                  {/* Table header */}
+                  <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 80px 80px 100px 140px 50px", gap: 0, padding: "6px 10px", borderBottom: `1px solid ${PALETTE.border}` }}>
+                    {["Date", "Description", "Source", "Type", "Amount", "Category", ""].map((h) => (
+                      <div key={h} style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600 }}>{h}</div>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </div>
+
                   {group.transactions.map((t) => {
                     const cat = ALL_CATEGORIES.find((c) => c.id === t.category);
+                    const hmrcCat = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
+                    const isExpanded = expanded.has(t.id);
                     const isEditing = editId === t.id;
-
-                    if (isEditing) {
-                      const cats = editData.type === "income" ? incomeCats : expenseCats;
-                      const vatOpts = [
-                        { value: "0", label: "No VAT (0%)" },
-                        { value: "20", label: "Standard (20%)" },
-                        { value: "5", label: "Reduced (5%)" },
-                        { value: "-1", label: "Exempt" },
-                        { value: "-2", label: "Outside Scope" },
-                      ];
-                      const vatDisplay = Number(editData.vat_rate) < 0 ? String(editData.vat_rate) : String(Number(editData.vat_rate));
-                      const computedVat = Number(editData.vat_rate) > 0
-                        ? r2(Number(editData.amount) * (Number(editData.vat_rate) / (100 + Number(editData.vat_rate))))
-                        : 0;
-                      return (
-                        <tr key={t.id} style={{ background: PALETTE.bg }}>
-                          <td style={{ padding: "8px 10px", fontSize: 13, color: PALETTE.textDim }}>{fmtDate(t.date)}</td>
-                          <td style={{ padding: "8px 10px" }}>
-                            <Input value={editData.description} onChange={(e) => setEditData({ ...editData, description: e.target.value })} style={{ width: "100%" }} />
-                          </td>
-                          <td style={{ padding: "8px 10px" }}>
-                            <Select value={editData.type} onChange={(v) => setEditData({ ...editData, type: v, category: "" })}
-                              options={[{ value: "income", label: "Income" }, { value: "expense", label: "Expense" }]} />
-                          </td>
-                          <td style={{ padding: "8px 10px" }}>
-                            <Input type="number" value={editData.amount} onChange={(e) => setEditData({ ...editData, amount: e.target.value })} style={{ width: 100 }} />
-                          </td>
-                          <td style={{ padding: "8px 10px" }}>
-                            <Select value={editData.category} onChange={(v) => setEditData({ ...editData, category: v })}
-                              options={[{ value: "", label: "Select..." }, ...cats.map((c) => ({ value: c.id, label: c.label }))]} />
-                          </td>
-                          <td style={{ padding: "8px 10px" }}>
-                            <Select value={vatDisplay} onChange={(v) => setEditData({ ...editData, vat_rate: Number(v) })}
-                              options={vatOpts} style={{ width: 130 }} />
-                            {computedVat > 0 && <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2 }}>VAT: {fmt(computedVat)}</div>}
-                          </td>
-                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
-                            <Button onClick={saveEdit} disabled={saving} style={{ marginRight: 4 }}>{saving ? "..." : "Save"}</Button>
-                            <Button variant="ghost" onClick={() => setEditId(null)}>Cancel</Button>
-                          </td>
-                        </tr>
-                      );
-                    }
+                    const invoice = invoiceMap[t.id] || (t.invoice_id ? invoiceMap[t.id] : null);
+                    const isUploading = uploading === t.id;
 
                     return (
-                      <tr key={t.id} style={{
-                        borderBottom: `1px solid ${PALETTE.border}`,
-                        opacity: t.excluded ? 0.4 : 1,
-                        borderLeft: `3px solid ${t.excluded ? "transparent" : t.category === "transfer" ? PALETTE.purple : !t.category ? PALETTE.orange : "transparent"}`,
-                      }}>
-                        <td style={{ padding: "8px 10px", fontSize: 13, color: PALETTE.textDim, whiteSpace: "nowrap" }}>{fmtDate(t.date)}</td>
-                        <td style={{ padding: "8px 10px", fontSize: 13, color: PALETTE.text, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.excluded ? "line-through" : "none" }}>
-                          {t.description}
-                        </td>
-                        <td style={{ padding: "8px 10px" }}>
-                          <Badge color={t.source === "bank" ? PALETTE.blue : t.source === "paypal" ? PALETTE.cyan : PALETTE.textDim}>{t.source}</Badge>
-                        </td>
-                        <td style={{ padding: "8px 10px" }}>
-                          <Badge color={t.type === "income" ? PALETTE.income : PALETTE.expense}>{t.type}</Badge>
-                        </td>
-                        <td style={{ padding: "8px 10px", fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : PALETTE.expense }}>
-                          {fmt(t.amount)}
-                        </td>
-                        <td style={{ padding: "8px 10px", fontSize: 12, color: t.category ? PALETTE.textDim : PALETTE.orange }}>
-                          {cat ? cat.label : t.category || "Uncategorised"}
-                        </td>
-                        <td style={{ padding: "8px 10px", fontSize: 11, color: PALETTE.textDim, fontFamily: "JetBrains Mono, monospace" }}>
-                          {Number(t.vat_rate) > 0
-                            ? <><span style={{ color: PALETTE.textMuted }}>{t.vat_rate}%</span> <span>{fmt(t.vat_amount)}</span></>
-                            : Number(t.vat_rate) === -1 ? <span style={{ color: PALETTE.textMuted }}>Exempt</span>
-                            : Number(t.vat_rate) === -2 ? <span style={{ color: PALETTE.textMuted }}>N/A</span>
-                            : <span style={{ color: PALETTE.textMuted }}>—</span>}
-                        </td>
-                        <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
-                          <button onClick={() => startEdit(t)} title="Edit" style={{ background: "none", border: "none", color: PALETTE.textMuted, cursor: "pointer", fontSize: 14, marginRight: 4 }}>✏️</button>
-                          <button onClick={() => toggleExclude(t)} title={t.excluded ? "Include" : "Exclude"} style={{ background: "none", border: "none", color: PALETTE.textMuted, cursor: "pointer", fontSize: 14, marginRight: 4 }}>
-                            {t.excluded ? "↩️" : "🚫"}
-                          </button>
-                          <button onClick={() => deleteTransaction(t.id)} title="Delete" style={{ background: "none", border: "none", color: PALETTE.textMuted, cursor: "pointer", fontSize: 14 }}>🗑️</button>
-                        </td>
-                      </tr>
+                      <div key={t.id} style={{ borderBottom: `1px solid ${PALETTE.border}` }}>
+                        {/* Summary row — clickable */}
+                        <div
+                          onClick={() => toggleExpand(t.id)}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "100px 1fr 80px 80px 100px 140px 50px",
+                            gap: 0,
+                            padding: "10px 10px",
+                            cursor: "pointer",
+                            opacity: t.excluded ? 0.4 : 1,
+                            borderLeft: `3px solid ${t.excluded ? "transparent" : t.category === "transfer" ? PALETTE.purple : !t.category ? PALETTE.orange : "transparent"}`,
+                            background: isExpanded ? PALETTE.bg : "transparent",
+                            transition: "background 0.15s",
+                          }}
+                        >
+                          <div style={{ fontSize: 13, color: PALETTE.textDim, whiteSpace: "nowrap" }}>{fmtDate(t.date)}</div>
+                          <div style={{
+                            fontSize: 13, color: PALETTE.text,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            textDecoration: t.excluded ? "line-through" : "none",
+                            display: "flex", alignItems: "center", gap: 6,
+                          }}>
+                            <span style={{ fontSize: 10, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>&#9654;</span>
+                            {t.description}
+                            {(invoice || t.invoice_id) && <span style={{ fontSize: 10, color: PALETTE.accent }} title="Has invoice">&#128206;</span>}
+                          </div>
+                          <div><Badge color={t.source === "bank" ? PALETTE.blue : t.source === "paypal" ? PALETTE.cyan : PALETTE.textDim}>{t.source}</Badge></div>
+                          <div><Badge color={t.type === "income" ? PALETTE.income : PALETTE.expense}>{t.type}</Badge></div>
+                          <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : PALETTE.expense }}>
+                            {fmt(t.amount)}
+                          </div>
+                          <div style={{ fontSize: 12, color: t.category ? PALETTE.textDim : PALETTE.orange }}>
+                            {cat ? cat.label : t.category || "Uncategorised"}
+                          </div>
+                          <div style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => deleteTransaction(t.id)} title="Delete" style={{ background: "none", border: "none", color: PALETTE.textMuted, cursor: "pointer", fontSize: 13, padding: 2 }}>&#128465;</button>
+                          </div>
+                        </div>
+
+                        {/* Expanded detail panel */}
+                        {isExpanded && (
+                          <div style={{
+                            padding: "16px 20px 20px",
+                            background: PALETTE.bg,
+                            borderTop: `1px solid ${PALETTE.border}`,
+                          }}>
+                            {/* Edit mode */}
+                            {isEditing ? (
+                              <div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+                                  <div>
+                                    <div style={detailLabel}>Description</div>
+                                    <Input value={editData.description} onChange={(e) => setEditData({ ...editData, description: e.target.value })} />
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Type</div>
+                                    <Select value={editData.type} onChange={(v) => setEditData({ ...editData, type: v, category: "" })}
+                                      options={[{ value: "income", label: "Income" }, { value: "expense", label: "Expense" }]} style={{ width: "100%" }} />
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Amount (GBP)</div>
+                                    <Input type="number" value={editData.amount} onChange={(e) => setEditData({ ...editData, amount: e.target.value })} />
+                                  </div>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+                                  <div>
+                                    <div style={detailLabel}>Category</div>
+                                    <Select
+                                      value={editData.category}
+                                      onChange={(v) => setEditData({ ...editData, category: v })}
+                                      options={[{ value: "", label: "Select..." }, ...(editData.type === "income" ? incomeCats : expenseCats).map((c) => ({ value: c.id, label: c.label }))]}
+                                      style={{ width: "100%" }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>VAT Rate</div>
+                                    <Select
+                                      value={String(Number(editData.vat_rate) < 0 ? editData.vat_rate : Number(editData.vat_rate))}
+                                      onChange={(v) => setEditData({ ...editData, vat_rate: Number(v) })}
+                                      options={[
+                                        { value: "0", label: "No VAT (0%)" },
+                                        { value: "20", label: "Standard (20%)" },
+                                        { value: "5", label: "Reduced (5%)" },
+                                        { value: "-1", label: "Exempt" },
+                                        { value: "-2", label: "Outside Scope" },
+                                      ]}
+                                      style={{ width: "100%" }}
+                                    />
+                                    {Number(editData.vat_rate) > 0 && (
+                                      <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 4 }}>
+                                        VAT: {fmt(r2(Number(editData.amount) * (Number(editData.vat_rate) / (100 + Number(editData.vat_rate)))))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Notes</div>
+                                    <Input value={editData.notes} onChange={(e) => setEditData({ ...editData, notes: e.target.value })} placeholder="Add notes..." />
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <Button onClick={saveEdit} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</Button>
+                                  <Button variant="ghost" onClick={() => setEditId(null)}>Cancel</Button>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Read-only detail view */
+                              <div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+                                  <div>
+                                    <div style={detailLabel}>Description</div>
+                                    <div style={detailValue}>{t.description}</div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Date</div>
+                                    <div style={detailValue}>{fmtDate(t.date)}</div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Amount</div>
+                                    <div style={{ ...detailValue, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : PALETTE.expense }}>
+                                      {fmt(t.amount)}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Type</div>
+                                    <div style={detailValue}>
+                                      <Badge color={t.type === "income" ? PALETTE.income : PALETTE.expense}>{t.type}</Badge>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+                                  <div>
+                                    <div style={detailLabel}>Category</div>
+                                    <div style={detailValue}>{cat ? cat.label : t.category || "Uncategorised"}</div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>HMRC Category</div>
+                                    <div style={detailValue}>{hmrcCat?.hmrc || "—"}</div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Source</div>
+                                    <div style={detailValue}>{t.source}</div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>VAT</div>
+                                    <div style={detailValue}>
+                                      {Number(t.vat_rate) > 0
+                                        ? `${t.vat_rate}% (${fmt(t.vat_amount)})`
+                                        : Number(t.vat_rate) === -1 ? "Exempt"
+                                        : Number(t.vat_rate) === -2 ? "Outside Scope"
+                                        : "None"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+                                  <div>
+                                    <div style={detailLabel}>Status</div>
+                                    <div style={detailValue}>
+                                      {t.excluded
+                                        ? <Badge color={PALETTE.orange}>Excluded</Badge>
+                                        : <Badge color={PALETTE.income}>Active</Badge>}
+                                      {t.exclude_reason && <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 2 }}>{t.exclude_reason}</div>}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Notes</div>
+                                    <div style={detailValue}>{t.notes || "—"}</div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Internal ID</div>
+                                    <div style={{ ...detailValue, fontSize: 10, fontFamily: "JetBrains Mono, monospace", color: PALETTE.textMuted, wordBreak: "break-all" }}>{t.id}</div>
+                                  </div>
+                                  <div>
+                                    <div style={detailLabel}>Last Updated</div>
+                                    <div style={detailValue}>{t.updated_at ? fmtDate(t.updated_at) : "—"}</div>
+                                  </div>
+                                </div>
+
+                                {/* Invoice / Receipt section */}
+                                <div style={{
+                                  padding: "14px 16px",
+                                  background: PALETTE.card,
+                                  borderRadius: 8,
+                                  border: `1px solid ${PALETTE.border}`,
+                                  marginBottom: 16,
+                                }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: PALETTE.text, marginBottom: 10 }}>
+                                    Invoice / Receipt
+                                  </div>
+                                  {invoice ? (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                      <div style={{
+                                        width: 36, height: 36, borderRadius: 6,
+                                        background: PALETTE.accent + "15", display: "flex", alignItems: "center", justifyContent: "center",
+                                        fontSize: 16,
+                                      }}>
+                                        &#128206;
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 13, color: PALETTE.text }}>{invoice.file_name || "Invoice"}</div>
+                                        <div style={{ fontSize: 11, color: PALETTE.textMuted }}>
+                                          Uploaded {invoice.upload_date ? fmtDate(invoice.upload_date) : ""}
+                                        </div>
+                                      </div>
+                                      <Button variant="outline" onClick={() => viewInvoice(invoice.id)} style={{ fontSize: 12, padding: "6px 12px" }}>
+                                        View
+                                      </Button>
+                                      <Button variant="ghost" onClick={() => removeInvoice(t.id, invoice.id)} style={{ fontSize: 12, padding: "6px 12px", color: PALETTE.danger }}>
+                                        Remove
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                      <div style={{ fontSize: 12, color: PALETTE.textMuted, flex: 1 }}>
+                                        No invoice attached. Upload a PDF or image file.
+                                      </div>
+                                      <Button
+                                        variant="outline"
+                                        onClick={() => handleFileSelect(t.id)}
+                                        disabled={isUploading}
+                                        style={{ fontSize: 12, padding: "6px 14px" }}
+                                      >
+                                        {isUploading ? "Uploading..." : "Upload Invoice"}
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Action buttons */}
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <Button onClick={() => startEdit(t)} style={{ fontSize: 12, padding: "6px 14px" }}>Edit</Button>
+                                  <Button
+                                    variant={t.excluded ? "outline" : "ghost"}
+                                    onClick={() => toggleExclude(t)}
+                                    style={{ fontSize: 12, padding: "6px 14px" }}
+                                  >
+                                    {t.excluded ? "Include in Accounts" : "Exclude from Accounts"}
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>}
+                </div>
+              )}
             </Card>
           );
         })

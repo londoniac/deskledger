@@ -25,7 +25,6 @@ const BUSINESS_TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "transactions", label: "Transactions" },
   { id: "import", label: "Import" },
-  { id: "expenses", label: "Expenses" },
   { id: "dividends", label: "Dividends" },
   { id: "dla", label: "DLA" },
   { id: "assets", label: "Assets" },

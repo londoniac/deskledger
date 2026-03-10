@@ -1,4 +1,5 @@
 import { Router } from "express";
+import express from "express";
 
 const router = Router();
 
@@ -98,6 +99,65 @@ router.delete("/:id", async (req, res, next) => {
 
     if (error) throw error;
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/invoices/:id/upload — upload invoice file (PDF, image)
+router.post("/:id/upload", express.raw({ type: ["application/pdf", "image/*"], limit: "10mb" }), async (req, res, next) => {
+  try {
+    const invoiceId = req.params.id;
+    const contentType = req.headers["content-type"] || "application/octet-stream";
+    const fileName = req.headers["x-file-name"] || `invoice-${Date.now()}`;
+
+    const extMap = {
+      "application/pdf": ".pdf",
+      "image/jpeg": ".jpg",
+      "image/png": ".png",
+      "image/gif": ".gif",
+      "image/webp": ".webp",
+    };
+    const ext = extMap[contentType] || "";
+    const storagePath = `${req.userId}/invoices/${invoiceId}${ext}`;
+
+    // Remove old file if exists
+    const { data: existing } = await req.supabase
+      .from("invoices")
+      .select("file_path")
+      .eq("id", invoiceId)
+      .eq("user_id", req.userId)
+      .maybeSingle();
+
+    if (existing?.file_path) {
+      await req.supabase.storage.from("documents").remove([existing.file_path]);
+    }
+
+    // Upload to Supabase Storage
+    const { error: uploadErr } = await req.supabase.storage
+      .from("documents")
+      .upload(storagePath, req.body, {
+        contentType,
+        upsert: true,
+      });
+
+    if (uploadErr) throw uploadErr;
+
+    // Update invoice record with file path
+    const { data, error } = await req.supabase
+      .from("invoices")
+      .update({
+        file_path: storagePath,
+        file_name: fileName,
+        file_size: req.body.length || 0,
+      })
+      .eq("id", invoiceId)
+      .eq("user_id", req.userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     next(err);
   }
