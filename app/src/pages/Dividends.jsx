@@ -11,6 +11,12 @@ export default function Dividends() {
   const [success, setSuccess] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [collapsed, setCollapsed] = useState(new Set());
+  const toggleGroup = (key) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -193,38 +199,58 @@ export default function Dividends() {
         </Card>
       )}
 
-      {/* Dividends List */}
-      <Card>
-        <div style={{ fontSize: 14, fontWeight: 600, color: PALETTE.text, marginBottom: 16 }}>Dividend History</div>
-        {dividends.length === 0 ? (
+      {/* Dividends List — grouped by tax year */}
+      {dividends.length === 0 ? (
+        <Card>
           <div style={{ color: PALETTE.textDim, fontSize: 13 }}>No dividends recorded yet.</div>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${PALETTE.border}` }}>
-                {["Date", "Shareholder", "Amount", "Tax Year", "Voucher", ""].map((h) => (
-                  <th key={h} style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: PALETTE.textMuted, fontWeight: 500 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {dividends.map((d) => (
-                <tr key={d.id} style={{ borderBottom: `1px solid ${PALETTE.border}22` }}>
-                  <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim }}>{fmtDate(d.date)}</td>
-                  <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.text }}>{d.shareholder}</td>
-                  <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, color: PALETTE.purple, fontFamily: "JetBrains Mono, monospace" }}>{fmt(d.amount)}</td>
-                  <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim }}>{d.tax_year}</td>
-                  <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim }}>{d.voucher_no || "—"}</td>
-                  <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                    <Button variant="ghost" onClick={() => startEdit(d)} style={{ fontSize: 11, padding: "4px 8px" }}>Edit</Button>
-                    <Button variant="ghost" onClick={() => handleDelete(d.id)} style={{ fontSize: 11, padding: "4px 8px", color: PALETTE.danger }}>Delete</Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        Object.entries(byTaxYear).sort(([a], [b]) => b.localeCompare(a)).map(([year, { total, count }]) => {
+          const yearDivs = dividends.filter((d) => d.tax_year === year);
+          const isCollapsed = collapsed.has(year);
+          return (
+            <Card key={year} style={{ marginBottom: 16 }}>
+              <div
+                onClick={() => toggleGroup(year)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: isCollapsed ? 0 : 16 }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>Tax Year {year}</h3>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({count} payment{count !== 1 ? "s" : ""})</span>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: PALETTE.purple, fontFamily: "JetBrains Mono, monospace" }}>{fmt(total)}</span>
+              </div>
+
+              {!isCollapsed && (
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${PALETTE.border}` }}>
+                      {["Date", "Shareholder", "Amount", "Voucher", ""].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: PALETTE.textMuted, fontWeight: 500 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yearDivs.map((d) => (
+                      <tr key={d.id} style={{ borderBottom: `1px solid ${PALETTE.border}22` }}>
+                        <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim }}>{fmtDate(d.date)}</td>
+                        <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.text }}>{d.shareholder}</td>
+                        <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, color: PALETTE.purple, fontFamily: "JetBrains Mono, monospace" }}>{fmt(d.amount)}</td>
+                        <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim }}>{d.voucher_no || "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <Button variant="ghost" onClick={() => startEdit(d)} style={{ fontSize: 11, padding: "4px 8px" }}>Edit</Button>
+                          <Button variant="ghost" onClick={() => handleDelete(d.id)} style={{ fontSize: 11, padding: "4px 8px", color: PALETTE.danger }}>Delete</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 }

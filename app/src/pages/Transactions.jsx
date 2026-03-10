@@ -20,6 +20,14 @@ export default function Transactions() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [showExcluded, setShowExcluded] = useState(false);
 
+  // Collapsed months
+  const [collapsed, setCollapsed] = useState(new Set());
+  const toggleMonth = (key) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
   // Editing
   const [editId, setEditId] = useState(null);
   const [editData, setEditData] = useState({});
@@ -197,9 +205,16 @@ export default function Transactions() {
 
           return (
             <Card key={group.key} style={{ marginBottom: 16 }}>
-              {/* Month header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{monthLabel}</h3>
+              {/* Month header — clickable to collapse */}
+              <div
+                onClick={() => toggleMonth(group.key)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: collapsed.has(group.key) ? 0 : 16 }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: collapsed.has(group.key) ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{monthLabel}</h3>
+                  {collapsed.has(group.key) && <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({group.transactions.length} transactions)</span>}
+                </div>
                 <div style={{ display: "flex", gap: 16, fontSize: 13, fontFamily: "JetBrains Mono, monospace" }}>
                   <span style={{ color: PALETTE.income }}>+{fmt(monthIncome)}</span>
                   <span style={{ color: PALETTE.expense }}>-{fmt(monthExpenses)}</span>
@@ -207,7 +222,7 @@ export default function Transactions() {
               </div>
 
               {/* Transaction rows */}
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              {!collapsed.has(group.key) && <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
                     {["Date", "Description", "Source", "Type", "Amount", "Category", "VAT", ""].map((h) => (
@@ -303,7 +318,7 @@ export default function Transactions() {
                     );
                   })}
                 </tbody>
-              </table>
+              </table>}
             </Card>
           );
         })

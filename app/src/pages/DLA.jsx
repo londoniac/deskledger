@@ -11,6 +11,12 @@ export default function DLA() {
   const [success, setSuccess] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [collapsed, setCollapsed] = useState(new Set());
+  const toggleMonth = (key) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -192,54 +198,82 @@ export default function DLA() {
         </Card>
       )}
 
-      {/* Entries List */}
-      <Card>
-        <div style={{ fontSize: 14, fontWeight: 600, color: PALETTE.text, marginBottom: 16 }}>DLA Ledger</div>
-        {entries.length === 0 ? (
+      {/* Entries List — grouped by month */}
+      {entries.length === 0 ? (
+        <Card>
           <div style={{ color: PALETTE.textDim, fontSize: 13 }}>No entries yet. Add the first DLA entry above.</div>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${PALETTE.border}` }}>
-                {["Date", "Description", "Direction", "Amount", "Balance", ""].map((h) => (
-                  <th key={h} style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: PALETTE.textMuted, fontWeight: 500 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id} style={{ borderBottom: `1px solid ${PALETTE.border}22` }}>
-                  <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim }}>{fmtDate(entry.date)}</td>
-                  <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.text }}>{entry.description}</td>
-                  <td style={{ padding: "10px 12px", fontSize: 13 }}>
-                    <span style={{
-                      color: entry.direction === "to_director" ? PALETTE.danger : PALETTE.income,
-                      fontSize: 11, fontWeight: 600,
-                    }}>
-                      {entry.direction === "to_director" ? "→ Director" : "→ Company"}
-                    </span>
-                  </td>
-                  <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, fontFamily: "JetBrains Mono, monospace",
-                    color: entry.direction === "to_director" ? PALETTE.danger : PALETTE.income }}>
-                    {fmt(entry.amount)}
-                  </td>
-                  <td style={{ padding: "10px 12px", fontSize: 13, fontFamily: "JetBrains Mono, monospace",
-                    color: entry.running_balance > 0 ? PALETTE.danger : PALETTE.income }}>
-                    {fmt(Math.abs(entry.running_balance))}
-                    <span style={{ fontSize: 10, color: PALETTE.textMuted, marginLeft: 4 }}>
-                      {entry.running_balance > 0 ? "DR" : entry.running_balance < 0 ? "CR" : ""}
-                    </span>
-                  </td>
-                  <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                    <Button variant="ghost" onClick={() => startEdit(entry)} style={{ fontSize: 11, padding: "4px 8px" }}>Edit</Button>
-                    <Button variant="ghost" onClick={() => handleDelete(entry.id)} style={{ fontSize: 11, padding: "4px 8px", color: PALETTE.danger }}>Delete</Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
+        </Card>
+      ) : (() => {
+        const monthGroups = {};
+        entries.forEach((e) => {
+          const d = new Date(e.date);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          if (!monthGroups[key]) monthGroups[key] = [];
+          monthGroups[key].push(e);
+        });
+        return Object.entries(monthGroups).sort(([a], [b]) => b.localeCompare(a)).map(([monthKey, monthEntries]) => {
+          const monthLabel = new Date(monthKey + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+          const monthTotal = monthEntries.reduce((s, e) => s + (e.direction === "to_director" ? Number(e.amount) : -Number(e.amount)), 0);
+          const isCollapsed = collapsed.has(monthKey);
+          return (
+            <Card key={monthKey} style={{ marginBottom: 16 }}>
+              <div
+                onClick={() => toggleMonth(monthKey)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: isCollapsed ? 0 : 16 }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{monthLabel}</h3>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({monthEntries.length} entr{monthEntries.length !== 1 ? "ies" : "y"})</span>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "JetBrains Mono, monospace", color: monthTotal > 0 ? PALETTE.danger : PALETTE.income }}>
+                  {monthTotal > 0 ? "+" : ""}{fmt(Math.abs(monthTotal))} net
+                </span>
+              </div>
+
+              {!isCollapsed && (
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${PALETTE.border}` }}>
+                      {["Date", "Description", "Direction", "Amount", "Balance", ""].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: PALETTE.textMuted, fontWeight: 500 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthEntries.map((entry) => (
+                      <tr key={entry.id} style={{ borderBottom: `1px solid ${PALETTE.border}22` }}>
+                        <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.textDim }}>{fmtDate(entry.date)}</td>
+                        <td style={{ padding: "10px 12px", fontSize: 13, color: PALETTE.text }}>{entry.description}</td>
+                        <td style={{ padding: "10px 12px", fontSize: 13 }}>
+                          <span style={{ color: entry.direction === "to_director" ? PALETTE.danger : PALETTE.income, fontSize: 11, fontWeight: 600 }}>
+                            {entry.direction === "to_director" ? "→ Director" : "→ Company"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, fontFamily: "JetBrains Mono, monospace",
+                          color: entry.direction === "to_director" ? PALETTE.danger : PALETTE.income }}>
+                          {fmt(entry.amount)}
+                        </td>
+                        <td style={{ padding: "10px 12px", fontSize: 13, fontFamily: "JetBrains Mono, monospace",
+                          color: entry.running_balance > 0 ? PALETTE.danger : PALETTE.income }}>
+                          {fmt(Math.abs(entry.running_balance))}
+                          <span style={{ fontSize: 10, color: PALETTE.textMuted, marginLeft: 4 }}>
+                            {entry.running_balance > 0 ? "DR" : entry.running_balance < 0 ? "CR" : ""}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <Button variant="ghost" onClick={() => startEdit(entry)} style={{ fontSize: 11, padding: "4px 8px" }}>Edit</Button>
+                          <Button variant="ghost" onClick={() => handleDelete(entry.id)} style={{ fontSize: 11, padding: "4px 8px", color: PALETTE.danger }}>Delete</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          );
+        });
+      })()}
     </div>
   );
 }
