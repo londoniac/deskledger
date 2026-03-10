@@ -10,6 +10,10 @@ import Import from "./pages/Import.jsx";
 import Settings from "./pages/Settings.jsx";
 import Budget from "./pages/Budget.jsx";
 import Debts from "./pages/Debts.jsx";
+import Dividends from "./pages/Dividends.jsx";
+import DLA from "./pages/DLA.jsx";
+import VATReturns from "./pages/VATReturns.jsx";
+import FixedAssets from "./pages/FixedAssets.jsx";
 
 // Workspace context — available to all child components
 const WorkspaceContext = createContext({ mode: "business" });
@@ -19,6 +23,10 @@ const BUSINESS_TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "transactions", label: "Transactions" },
   { id: "import", label: "Import" },
+  { id: "dividends", label: "Dividends" },
+  { id: "dla", label: "DLA" },
+  { id: "assets", label: "Assets" },
+  { id: "vat", label: "VAT" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -149,6 +157,10 @@ export default function App() {
           {activeTab === "transactions" && <Transactions />}
           {activeTab === "debts" && <Debts />}
           {activeTab === "import" && <Import />}
+          {activeTab === "dividends" && <Dividends />}
+          {activeTab === "dla" && <DLA />}
+          {activeTab === "assets" && <FixedAssets />}
+          {activeTab === "vat" && <VATReturns />}
           {activeTab === "settings" && <Settings onProfileUpdate={setProfile} />}
         </div>
       </div>

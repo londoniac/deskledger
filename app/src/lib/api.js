@@ -103,6 +103,43 @@ const api = {
     saveCustomCategory: (cat) => request("/api/budgets/categories", { method: "POST", body: JSON.stringify(cat) }),
     deleteCustomCategory: (id) => request(`/api/budgets/categories/${id}`, { method: "DELETE" }),
   },
+  dividends: {
+    getAll: () => request("/api/dividends"),
+    save: (div) => request("/api/dividends", { method: "POST", body: JSON.stringify(div) }),
+    update: (id, data) => request(`/api/dividends/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id) => request(`/api/dividends/${id}`, { method: "DELETE" }),
+  },
+
+  dla: {
+    getAll: () => request("/api/dla"),
+    save: (entry) => request("/api/dla", { method: "POST", body: JSON.stringify(entry) }),
+    update: (id, data) => request(`/api/dla/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id) => request(`/api/dla/${id}`, { method: "DELETE" }),
+  },
+
+  vatReturns: {
+    getAll: () => request("/api/vat-returns"),
+    get: (id) => request(`/api/vat-returns/${id}`),
+    save: (vr) => request("/api/vat-returns", { method: "POST", body: JSON.stringify(vr) }),
+    update: (id, data) => request(`/api/vat-returns/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    calculate: (id) => request(`/api/vat-returns/${id}/calculate`, { method: "POST" }),
+    submit: (id) => request(`/api/vat-returns/${id}/submit`, { method: "POST" }),
+    delete: (id) => request(`/api/vat-returns/${id}`, { method: "DELETE" }),
+  },
+
+  fixedAssets: {
+    getAll: () => request("/api/fixed-assets"),
+    save: (asset) => request("/api/fixed-assets", { method: "POST", body: JSON.stringify(asset) }),
+    update: (id, data) => request(`/api/fixed-assets/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id) => request(`/api/fixed-assets/${id}`, { method: "DELETE" }),
+  },
+
+  journalEntries: {
+    getAll: () => request("/api/journal-entries"),
+    save: (entry) => request("/api/journal-entries", { method: "POST", body: JSON.stringify(entry) }),
+    update: (id, data) => request(`/api/journal-entries/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id) => request(`/api/journal-entries/${id}`, { method: "DELETE" }),
+  },
 };
 
 export default api;

@@ -13,6 +13,11 @@ import exportRoutes from "./routes/export.js";
 import debtRoutes from "./routes/debts.js";
 import budgetRoutes from "./routes/budgets.js";
 import paypalRoutes from "./routes/paypal.js";
+import dividendRoutes from "./routes/dividends.js";
+import dlaRoutes from "./routes/dla.js";
+import vatReturnRoutes from "./routes/vat-returns.js";
+import fixedAssetRoutes from "./routes/fixed-assets.js";
+import journalEntryRoutes from "./routes/journal-entries.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -49,6 +54,11 @@ app.use("/api/export", exportRoutes);
 app.use("/api/debts", debtRoutes);
 app.use("/api/budgets", budgetRoutes);
 app.use("/api/paypal", paypalRoutes);
+app.use("/api/dividends", dividendRoutes);
+app.use("/api/dla", dlaRoutes);
+app.use("/api/vat-returns", vatReturnRoutes);
+app.use("/api/fixed-assets", fixedAssetRoutes);
+app.use("/api/journal-entries", journalEntryRoutes);
 
 // ─── Error Handler ───
 app.use((err, _req, res, _next) => {
