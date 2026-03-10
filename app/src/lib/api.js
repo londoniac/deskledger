@@ -59,6 +59,21 @@ const api = {
     save: (exp) => request("/api/expenses", { method: "POST", body: JSON.stringify(exp) }),
     update: (id, data) => request(`/api/expenses/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id) => request(`/api/expenses/${id}`, { method: "DELETE" }),
+    uploadReceipt: async (id, file) => {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/api/expenses/${id}/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type,
+          "X-File-Name": file.name,
+          Authorization: `Bearer ${token}`,
+        },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    getFileUrl: (id) => request(`/api/expenses/${id}/file`),
   },
 
   import: {

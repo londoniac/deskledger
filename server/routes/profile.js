@@ -9,9 +9,21 @@ router.get("/", async (req, res, next) => {
       .from("user_profiles")
       .select("*")
       .eq("id", req.userId)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+
+    // Auto-create profile if it doesn't exist (e.g. trigger didn't fire)
+    if (!data) {
+      const { data: newProfile, error: createErr } = await req.supabase
+        .from("user_profiles")
+        .insert({ id: req.userId, email: req.user.email || "" })
+        .select()
+        .single();
+      if (createErr) throw createErr;
+      return res.json(newProfile);
+    }
+
     res.json(data);
   } catch (err) {
     next(err);

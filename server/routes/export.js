@@ -9,12 +9,15 @@ const router = Router();
 router.get("/accountant-pack", async (req, res, next) => {
   try {
     // Fetch all user data
-    const [profileRes, txnRes, invRes, expRes, ppRes] = await Promise.all([
-      req.supabase.from("user_profiles").select("*").eq("id", req.userId).single(),
+    const [profileRes, txnRes, invRes, expRes, ppRes, divRes, dlaRes, faRes] = await Promise.all([
+      req.supabase.from("user_profiles").select("*").eq("id", req.userId).maybeSingle(),
       req.supabase.from("transactions").select("*").eq("user_id", req.userId).order("date", { ascending: false }),
       req.supabase.from("invoices").select("*").eq("user_id", req.userId).order("created_at", { ascending: false }),
       req.supabase.from("personal_expenses").select("*").eq("user_id", req.userId).order("date", { ascending: false }),
       req.supabase.from("paypal_transactions").select("*").eq("user_id", req.userId).order("date", { ascending: false }),
+      req.supabase.from("dividends").select("*").eq("user_id", req.userId).order("date", { ascending: false }),
+      req.supabase.from("directors_loan").select("*").eq("user_id", req.userId).order("date", { ascending: true }),
+      req.supabase.from("fixed_assets").select("*").eq("user_id", req.userId).order("date_acquired", { ascending: false }),
     ]);
 
     const profile = profileRes.data || {};
@@ -22,6 +25,9 @@ router.get("/accountant-pack", async (req, res, next) => {
     const invoices = invRes.data || [];
     const personalExpenses = expRes.data || [];
     const paypalTransactions = ppRes.data || [];
+    const dividends = divRes.data || [];
+    const dlaEntries = dlaRes.data || [];
+    const fixedAssets = faRes.data || [];
 
     const active = transactions.filter((t) => !t.excluded);
     const income = active.filter((t) => t.type === "income" && t.category !== "transfer");
@@ -96,25 +102,118 @@ router.get("/accountant-pack", async (req, res, next) => {
       zip.file("personal-expenses.csv", [peHeaders.join(","), ...peRows.map((r) => r.join(","))].join("\n"));
     }
 
-    // Tax summary
+    // Dividends CSV
+    if (dividends.length > 0) {
+      const divHeaders = ["Date", "Shareholder", "Gross Amount (GBP)", "Tax Year", "Voucher No", "Notes"];
+      const divRows = dividends.map((d) => [d.date, `"${d.shareholder}"`, Number(d.amount).toFixed(2), d.tax_year, d.voucher_no || "", `"${(d.notes || "").replace(/"/g, '""')}"`]);
+      zip.file("dividends.csv", [divHeaders.join(","), ...divRows.map((r) => r.join(","))].join("\n"));
+    }
+
+    // Directors' Loan Account CSV
+    if (dlaEntries.length > 0) {
+      let balance = 0;
+      const dlaHeaders = ["Date", "Description", "Direction", "Amount (GBP)", "Running Balance", "Category", "Notes"];
+      const dlaRows = dlaEntries.map((e) => {
+        if (e.direction === "to_director") balance += Number(e.amount);
+        else balance -= Number(e.amount);
+        return [e.date, `"${(e.description || "").replace(/"/g, '""')}"`, e.direction, Number(e.amount).toFixed(2), r2(balance).toFixed(2), e.category || "", `"${(e.notes || "").replace(/"/g, '""')}"`];
+      });
+      zip.file("directors-loan-account.csv", [dlaHeaders.join(","), ...dlaRows.map((r) => r.join(","))].join("\n"));
+    }
+
+    // Fixed Assets CSV
+    if (fixedAssets.length > 0) {
+      const faHeaders = ["Name", "Category", "Date Acquired", "Cost (GBP)", "Depreciation Method", "Useful Life (Years)", "Notes"];
+      const faRows = fixedAssets.map((a) => [
+        `"${a.name}"`, a.category, a.date_acquired, Number(a.cost).toFixed(2),
+        a.depreciation_method, a.useful_life_years, `"${(a.notes || "").replace(/"/g, '""')}"`
+      ]);
+      zip.file("fixed-assets.csv", [faHeaders.join(","), ...faRows.map((r) => r.join(","))].join("\n"));
+    }
+
+    // DLA summary
+    let dlaBalance = 0;
+    dlaEntries.forEach((e) => {
+      if (e.direction === "to_director") dlaBalance += Number(e.amount);
+      else dlaBalance -= Number(e.amount);
+    });
+    const s455 = dlaBalance > 0 ? r2(dlaBalance * 0.3375) : 0;
+    const totalDividends = dividends.reduce((s, d) => s + Number(d.amount), 0);
+
+    // Expense breakdown by HMRC category
+    const expByHmrc = {};
+    expenses.forEach((t) => {
+      const cat = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
+      const hmrc = cat?.hmrc || "Other";
+      expByHmrc[hmrc] = (expByHmrc[hmrc] || 0) + Number(t.amount);
+    });
+
+    // Comprehensive tax summary
     const taxLines = [
-      `CORPORATION TAX COMPUTATION`,
-      `${companyName}`,
-      `Period: ${profile.year_start || "N/A"} to ${profile.year_end || "N/A"}`,
-      `Tax Reference: ${profile.tax_ref || "N/A"}`,
-      `Company Reg: ${profile.company_reg || "N/A"}`,
-      `Generated: ${new Date().toLocaleDateString("en-GB")}`,
+      `═══════════════════════════════════════════════════════`,
+      `  CORPORATION TAX COMPUTATION`,
+      `  ${companyName}`,
+      `═══════════════════════════════════════════════════════`,
       ``,
-      `TRADING INCOME: ${fmt(totalIncome)}`,
-      `TOTAL EXPENSES: ${fmt(totalExpenses)}`,
-      `  Bank/Direct: ${fmt(totalBankExpenses)}`,
-      `  PayPal Payouts: ${fmt(ppAuthorPayouts)}`,
-      `  PayPal Fees: ${fmt(ppFees)}`,
-      `  Personal Claims: ${fmt(peTotal)}`,
+      `  Company Registration:  ${profile.company_reg || "N/A"}`,
+      `  HMRC Tax Reference:    ${profile.tax_ref || "N/A"}`,
+      `  Accounting Period:     ${profile.year_start || "N/A"} to ${profile.year_end || "N/A"}`,
+      `  Generated:             ${new Date().toLocaleDateString("en-GB")}`,
       ``,
-      `NET PROFIT: ${fmt(profit)}`,
-      `Corporation Tax @ ${taxRate}%: ${fmt(corpTax)}`,
-      `Profit After Tax: ${fmt(profit - corpTax)}`,
+      `───────────────────────────────────────────────────────`,
+      `  PROFIT AND LOSS`,
+      `───────────────────────────────────────────────────────`,
+      ``,
+      `  TURNOVER`,
+      `    Trading Income:                      ${fmt(totalIncome).padStart(12)}`,
+      ``,
+      `  EXPENSES`,
+      ...Object.entries(expByHmrc).sort((a, b) => b[1] - a[1]).map(([cat, amt]) =>
+        `    ${cat}:${" ".repeat(Math.max(1, 37 - cat.length))}${fmt(amt).padStart(12)}`),
+      `    PayPal Author Payouts:               ${fmt(ppAuthorPayouts).padStart(12)}`,
+      `    PayPal Fees:                         ${fmt(ppFees).padStart(12)}`,
+      `    Personal Expense Claims:             ${fmt(peTotal).padStart(12)}`,
+      `                                         ────────────`,
+      `    TOTAL EXPENSES:                      ${fmt(totalExpenses).padStart(12)}`,
+      ``,
+      `  NET PROFIT BEFORE TAX:                 ${fmt(profit).padStart(12)}`,
+      `  Corporation Tax @ ${taxRate}%:              ${fmt(corpTax).padStart(12)}`,
+      `  NET PROFIT AFTER TAX:                  ${fmt(profit - corpTax).padStart(12)}`,
+      ``,
+      `───────────────────────────────────────────────────────`,
+      `  ADDITIONAL ITEMS`,
+      `───────────────────────────────────────────────────────`,
+      ``,
+      `  Dividends Paid:                        ${fmt(totalDividends).padStart(12)}`,
+      `    (not deductible — for personal tax)`,
+      ``,
+      `  Directors' Loan Account:`,
+      `    Closing Balance:                     ${fmt(Math.abs(dlaBalance)).padStart(12)}`,
+      `    Status: ${dlaBalance > 0 ? "Director owes company" : dlaBalance < 0 ? "Company owes director" : "Balanced"}`,
+      ...(s455 > 0 ? [
+        `    S455 Tax Liability (33.75%):         ${fmt(s455).padStart(12)}`,
+        `    (repayable when loan repaid within 9 months of year end)`,
+      ] : []),
+      ``,
+      `  Fixed Assets:                          ${fixedAssets.length} item${fixedAssets.length !== 1 ? "s" : ""}`,
+      `    Total Cost:                          ${fmt(fixedAssets.reduce((s, a) => s + Number(a.cost), 0)).padStart(12)}`,
+      ``,
+      `───────────────────────────────────────────────────────`,
+      `  RECORDS INCLUDED`,
+      `───────────────────────────────────────────────────────`,
+      ``,
+      `  Bank Transactions:    ${transactions.length}`,
+      `  PayPal Transactions:  ${paypalTransactions.length}`,
+      `  Invoices on File:     ${invoices.length}`,
+      `  Personal Expenses:    ${personalExpenses.length}`,
+      `  Dividend Payments:    ${dividends.length}`,
+      `  DLA Entries:          ${dlaEntries.length}`,
+      `  Fixed Assets:         ${fixedAssets.length}`,
+      ``,
+      `═══════════════════════════════════════════════════════`,
+      `  This is a summary only. Verify with your accountant`,
+      `  before filing. This does not constitute tax advice.`,
+      `═══════════════════════════════════════════════════════`,
     ];
     zip.file("tax-summary.txt", taxLines.join("\n"));
 
