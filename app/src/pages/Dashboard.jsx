@@ -55,6 +55,10 @@ export default function Dashboard() {
     const totalCapital = r2(capitalTxns.reduce((s, t) => s + Number(t.amount), 0));
     let companyExpenses = r2(expenses.reduce((s, t) => s + Number(t.amount), 0));
 
+    // Bank transfers out (to PayPal etc.) — excluded from P&L but needed for reconciliation
+    const transferExpenses = active.filter((t) => t.type === "expense" && t.category === "transfer");
+    const bankTransfersOut = r2(transferExpenses.reduce((s, t) => s + Number(t.amount), 0));
+
     // PayPal expenses: author payouts + fees (matches desktop app logic)
     // PayPal transactions use types: transfer_in, author_payout, fee, refund, other
     let paypalExpenses = 0;
@@ -91,7 +95,7 @@ export default function Dashboard() {
       income: combinedIncome, expenses: combinedExpenses, net, tax, taxRate, margin, savingsRate,
       incomeCount: income.length,
       expenseCount: expenses.length + (isBusiness ? paypalTxns.filter((t) => t.type === "author_payout" || t.type === "fee").length : 0),
-      companyExpenses, paypalExpenses, paypalIncome, ppTransfersIn, totalCapital,
+      companyExpenses, paypalExpenses, paypalIncome, ppTransfersIn, bankTransfersOut, totalCapital,
       bankIncome: totalIncome,
     };
   }, [transactions, paypalTxns, profile, isBusiness]);
@@ -293,11 +297,12 @@ export default function Dashboard() {
 
 function AccountReconciliation({ stats, profile }) {
   const seedMoney = Number(profile?.seed_money || 0);
-  // Bank balance: seed + trading income - company expenses (transfers to PayPal are excluded as category=transfer)
-  const bankBalance = r2(seedMoney + stats.bankIncome - stats.companyExpenses);
+  // Bank balance: seed + trading income - company expenses - transfers out to PayPal
+  const bankBalance = r2(seedMoney + stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut);
   // PayPal balance: money transferred in from bank - author payouts - fees
   const paypalBalance = r2(stats.ppTransfersIn - stats.paypalExpenses);
   const cashPosition = r2(bankBalance + paypalBalance);
+  // P&L check: transfers cancel out (bank -X + PayPal +X = 0), so just trading activity
   const plCheck = r2(seedMoney + stats.income - stats.expenses);
   const variance = r2(cashPosition - plCheck);
 
@@ -322,8 +327,9 @@ function AccountReconciliation({ stats, profile }) {
         <div>
           <div style={{ fontSize: 12, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Balances</div>
           {seedMoney > 0 && <Row label="Seed Capital" value={seedMoney} color={PALETTE.blue} />}
-          <Row label="Bank (trading)" value={r2(stats.bankIncome - stats.companyExpenses)} />
-          {stats.paypalIncome > 0 || stats.paypalExpenses > 0 ? (
+          <Row label="Bank (trading)" value={r2(stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut)} />
+          {stats.bankTransfersOut > 0 && <Row label="  ↳ incl. transfers to PayPal" value={r2(-stats.bankTransfersOut)} color={PALETTE.textMuted} indent />}
+          {stats.ppTransfersIn > 0 || stats.paypalExpenses > 0 ? (
             <Row label="PayPal" value={paypalBalance} />
           ) : null}
           <Row label="Cash Position" value={cashPosition} color={cashPosition >= 0 ? PALETTE.income : PALETTE.expense} bold />
