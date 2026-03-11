@@ -187,6 +187,9 @@ export default function PayPal() {
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Sync complete</div>
             <div>Fetched {syncResult.totalFetched} raw events from PayPal</div>
             <div>{syncResult.kept} kept after filtering ({syncResult.skipped} internal entries skipped, {syncResult.currencyDupes} currency duplicates removed{syncResult.notifDupes > 0 ? `, ${syncResult.notifDupes} notification duplicates removed` : ""})</div>
+            {syncResult.ratesApplied > 0 && (
+              <div>{syncResult.ratesApplied} exchange rates fetched from ECB</div>
+            )}
             <div style={{ fontWeight: 600, marginTop: 4 }}>
               {syncResult.newImported} new transactions imported
               {syncResult.alreadyExisted > 0 && `, ${syncResult.alreadyExisted} already existed`}

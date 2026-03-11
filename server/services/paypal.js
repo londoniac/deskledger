@@ -1,5 +1,39 @@
 // PayPal API integration — ported from Electron to server-side
 
+// Fetch historical exchange rates from frankfurter.app (ECB data, HMRC-accepted)
+// Returns a map: "YYYY-MM-DD|USD" → rate (e.g. 0.79 means 1 USD = 0.79 GBP)
+async function fetchExchangeRates(dateCurrencyPairs) {
+  const rateMap = {};
+  if (dateCurrencyPairs.length === 0) return rateMap;
+
+  // Group by currency to minimize API calls
+  const byCurrency = {};
+  dateCurrencyPairs.forEach(({ date, currency }) => {
+    if (!byCurrency[currency]) byCurrency[currency] = new Set();
+    byCurrency[currency].add(date);
+  });
+
+  for (const [currency, dates] of Object.entries(byCurrency)) {
+    // Fetch each date individually (frankfurter doesn't support bulk historical)
+    for (const date of dates) {
+      try {
+        const res = await fetch(`https://api.frankfurter.app/${date}?from=${currency}&to=GBP`);
+        if (res.ok) {
+          const data = await res.json();
+          const rate = data.rates?.GBP;
+          if (rate) {
+            rateMap[`${date}|${currency}`] = rate;
+          }
+        }
+      } catch (e) {
+        console.log(`[PayPal] Failed to fetch ${currency}/GBP rate for ${date}:`, e.message);
+      }
+    }
+  }
+
+  return rateMap;
+}
+
 const KNOWN_CODES = {
   T0303: "transfer_in",
   T0300: "transfer_in",
@@ -98,12 +132,6 @@ function mapTransaction(ppTxn) {
     gbpAmount = Math.abs(amount);
   } else if (exchangeRate) {
     gbpAmount = Math.round((Math.abs(amount) / exchangeRate) * 100) / 100;
-  }
-
-  // Log non-GBP transactions missing exchange rate so we can find alternative conversion fields
-  if (currency !== "GBP" && !exchangeRate) {
-    console.log(`[PayPal] No exchange rate for ${currency} ${amount} (${eventCode}). Raw transaction_info keys:`, Object.keys(info));
-    console.log(`[PayPal] Full transaction_info:`, JSON.stringify(info, null, 2));
   }
 
   // Determine type from event code
@@ -210,10 +238,30 @@ export async function syncTransactions(clientId, clientSecret, startDate, endDat
   // Deduplicate notification pairs (e.g. "You have a payout from Vox9!" companion events)
   const { filtered, notifDupes } = deduplicateNotificationPairs(afterCurrency);
 
+  // Fetch exchange rates for non-GBP transactions missing gbp_amount
+  const needRates = filtered
+    .filter((t) => t.gbp_amount == null && t._currency !== "GBP")
+    .map((t) => ({ date: t.date, currency: t._currency }));
+
+  let ratesApplied = 0;
+  if (needRates.length > 0) {
+    const rateMap = await fetchExchangeRates(needRates);
+    filtered.forEach((t) => {
+      if (t.gbp_amount == null && t._currency !== "GBP") {
+        const rate = rateMap[`${t.date}|${t._currency}`];
+        if (rate) {
+          t.gbp_amount = Math.round(t.amount * rate * 100) / 100;
+          t.notes = [t.notes, `ECB rate: ${rate}`].filter(Boolean).join(" | ");
+          ratesApplied++;
+        }
+      }
+    });
+  }
+
   // Clean up internal fields
   const clean = filtered.map(({ _skip, _currency, ...t }) => t);
 
-  return { transactions: clean, totalRaw: allRaw.length, skipped, currencyDupes, notifDupes };
+  return { transactions: clean, totalRaw: allRaw.length, skipped, currencyDupes, notifDupes, ratesApplied };
 }
 
 export async function testConnection(clientId, clientSecret, sandbox = false) {
