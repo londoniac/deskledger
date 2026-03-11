@@ -1,39 +1,5 @@
 // PayPal API integration — ported from Electron to server-side
 
-// Fetch historical exchange rates from frankfurter.app (ECB data, HMRC-accepted)
-// Returns a map: "YYYY-MM-DD|USD" → rate (e.g. 0.79 means 1 USD = 0.79 GBP)
-async function fetchExchangeRates(dateCurrencyPairs) {
-  const rateMap = {};
-  if (dateCurrencyPairs.length === 0) return rateMap;
-
-  // Group by currency to minimize API calls
-  const byCurrency = {};
-  dateCurrencyPairs.forEach(({ date, currency }) => {
-    if (!byCurrency[currency]) byCurrency[currency] = new Set();
-    byCurrency[currency].add(date);
-  });
-
-  for (const [currency, dates] of Object.entries(byCurrency)) {
-    // Fetch each date individually (frankfurter doesn't support bulk historical)
-    for (const date of dates) {
-      try {
-        const res = await fetch(`https://api.frankfurter.app/${date}?from=${currency}&to=GBP`);
-        if (res.ok) {
-          const data = await res.json();
-          const rate = data.rates?.GBP;
-          if (rate) {
-            rateMap[`${date}|${currency}`] = rate;
-          }
-        }
-      } catch (e) {
-        console.log(`[PayPal] Failed to fetch ${currency}/GBP rate for ${date}:`, e.message);
-      }
-    }
-  }
-
-  return rateMap;
-}
-
 const KNOWN_CODES = {
   T0303: "transfer_in",
   T0300: "transfer_in",
@@ -43,7 +9,7 @@ const KNOWN_CODES = {
   T1201: "refund",
 };
 
-// Codes to skip (internal bookkeeping and duplicates of real transactions)
+// Codes to skip from final output (internal bookkeeping / duplicates)
 const SKIP_CODES = new Set(["T0001", "T0003", "T0200", "T0400", "T0600", "T1107"]);
 
 async function getAccessToken(clientId, clientSecret, sandbox = false) {
@@ -155,7 +121,64 @@ function mapTransaction(ppTxn) {
     ].filter(Boolean).join(" | "),
     _skip: SKIP_CODES.has(eventCode),
     _currency: currency,
+    // Keep reference IDs for cross-referencing companion events
+    _reference_id: info.paypal_reference_id || null,
   };
+}
+
+// Look through ALL mapped events (including skipped ones) to find GBP amounts
+// for non-GBP transactions via paypal_reference_id links.
+// PayPal creates companion events (T0200 currency conversion, T0001 settlement, etc.)
+// that may contain the GBP equivalent.
+function resolveGbpFromCompanions(allMapped) {
+  // Build lookups: transaction_id → event, and reference_id → list of events
+  const byTxnId = {};
+  const byRefId = {};
+  allMapped.forEach((t) => {
+    byTxnId[t.paypal_id] = t;
+    if (t._reference_id) {
+      if (!byRefId[t._reference_id]) byRefId[t._reference_id] = [];
+      byRefId[t._reference_id].push(t);
+    }
+  });
+
+  let resolved = 0;
+  allMapped.forEach((t) => {
+    if (t.gbp_amount != null || t._currency === "GBP") return;
+
+    // Strategy 1: find GBP events that reference this transaction
+    const referencing = byRefId[t.paypal_id] || [];
+    const gbpCompanion = referencing.find((c) => c._currency === "GBP" && c.paypal_id !== t.paypal_id);
+    if (gbpCompanion) {
+      t.gbp_amount = gbpCompanion.amount;
+      t.notes = [t.notes, `GBP from ${gbpCompanion.event_code}: £${gbpCompanion.amount}`].filter(Boolean).join(" | ");
+      resolved++;
+      return;
+    }
+
+    // Strategy 2: this transaction references another — check if that parent has GBP info
+    if (t._reference_id) {
+      const parent = byTxnId[t._reference_id];
+      if (parent && parent._currency === "GBP" && parent.paypal_id !== t.paypal_id) {
+        t.gbp_amount = parent.amount;
+        t.notes = [t.notes, `GBP from ${parent.event_code}: £${parent.amount}`].filter(Boolean).join(" | ");
+        resolved++;
+        return;
+      }
+
+      // Strategy 3: check siblings (other events sharing the same reference)
+      const siblings = byRefId[t._reference_id] || [];
+      const gbpSibling = siblings.find((s) => s._currency === "GBP" && s.paypal_id !== t.paypal_id);
+      if (gbpSibling) {
+        t.gbp_amount = gbpSibling.amount;
+        t.notes = [t.notes, `GBP from ${gbpSibling.event_code}: £${gbpSibling.amount}`].filter(Boolean).join(" | ");
+        resolved++;
+        return;
+      }
+    }
+  });
+
+  return resolved;
 }
 
 // Remove USD/GBP duplicate pairs (PayPal creates two entries per cross-currency payment)
@@ -227,10 +250,24 @@ export async function syncTransactions(clientId, clientSecret, startDate, endDat
     chunkStart = chunkEnd;
   }
 
-  // Map and filter
-  const mapped = allRaw.map(mapTransaction);
-  const kept = mapped.filter((t) => !t._skip);
-  const skipped = mapped.length - kept.length;
+  // Map ALL events first (including skipped ones — we need them for GBP cross-referencing)
+  const allMapped = allRaw.map(mapTransaction);
+
+  // Resolve GBP amounts from companion events BEFORE filtering
+  const gbpResolved = resolveGbpFromCompanions(allMapped);
+
+  // Log any remaining unresolved non-GBP transactions for debugging
+  const unresolved = allMapped.filter((t) => !t._skip && t.gbp_amount == null && t._currency !== "GBP");
+  if (unresolved.length > 0) {
+    console.log(`[PayPal] ${unresolved.length} non-GBP transactions still missing GBP amount after companion resolution:`);
+    unresolved.forEach((t) => {
+      console.log(`  ${t.date} ${t.event_code} ${t._currency} ${t.amount} — ${t.description}`);
+    });
+  }
+
+  // Now apply skip codes
+  const kept = allMapped.filter((t) => !t._skip);
+  const skipped = allMapped.length - kept.length;
 
   // Deduplicate currency pairs
   const { filtered: afterCurrency, currencyDupes } = deduplicateCurrencyPairs(kept);
@@ -238,30 +275,10 @@ export async function syncTransactions(clientId, clientSecret, startDate, endDat
   // Deduplicate notification pairs (e.g. "You have a payout from Vox9!" companion events)
   const { filtered, notifDupes } = deduplicateNotificationPairs(afterCurrency);
 
-  // Fetch exchange rates for non-GBP transactions missing gbp_amount
-  const needRates = filtered
-    .filter((t) => t.gbp_amount == null && t._currency !== "GBP")
-    .map((t) => ({ date: t.date, currency: t._currency }));
-
-  let ratesApplied = 0;
-  if (needRates.length > 0) {
-    const rateMap = await fetchExchangeRates(needRates);
-    filtered.forEach((t) => {
-      if (t.gbp_amount == null && t._currency !== "GBP") {
-        const rate = rateMap[`${t.date}|${t._currency}`];
-        if (rate) {
-          t.gbp_amount = Math.round(t.amount * rate * 100) / 100;
-          t.notes = [t.notes, `ECB rate: ${rate}`].filter(Boolean).join(" | ");
-          ratesApplied++;
-        }
-      }
-    });
-  }
-
   // Clean up internal fields
-  const clean = filtered.map(({ _skip, _currency, ...t }) => t);
+  const clean = filtered.map(({ _skip, _currency, _reference_id, ...t }) => t);
 
-  return { transactions: clean, totalRaw: allRaw.length, skipped, currencyDupes, notifDupes, ratesApplied };
+  return { transactions: clean, totalRaw: allRaw.length, skipped, currencyDupes, notifDupes, gbpResolved };
 }
 
 export async function testConnection(clientId, clientSecret, sandbox = false) {

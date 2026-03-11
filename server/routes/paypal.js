@@ -149,7 +149,7 @@ router.post("/sync", checkAddon, async (req, res) => {
       skipped: result.skipped,
       currencyDupes: result.currencyDupes,
       notifDupes: result.notifDupes || 0,
-      ratesApplied: result.ratesApplied || 0,
+      gbpResolved: result.gbpResolved || 0,
       newImported: newTxns.length,
       alreadyExisted: result.transactions.length - newTxns.length,
     });
