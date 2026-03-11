@@ -30,6 +30,19 @@ function parseCSVLine(line) {
   return result;
 }
 
+// Extract the closing balance from the last row of a bank CSV (e.g. Monzo "Balance" column)
+export function extractClosingBalance(rows) {
+  if (!rows || rows.length === 0) return null;
+  const lastRow = rows[rows.length - 1];
+  const balanceStr = lastRow.balance || lastRow["closing balance"] || lastRow["available balance"] || "";
+  const val = parseFloat(balanceStr.replace(/[£$,]/g, ""));
+  if (isNaN(val)) return null;
+
+  // Also get the date of the last transaction
+  const dateStr = lastRow.date || lastRow.transaction_date || lastRow["created"] || "";
+  return { balance: val, date: dateStr };
+}
+
 export function normalizeTransactions(rows, source = "bank") {
   return rows.map((row, idx) => {
     const keys = Object.keys(row);

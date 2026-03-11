@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
 import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PIE_COLORS } from "../lib/constants.js";
-import { fmt, r2 } from "../lib/format.js";
+import { fmt, r2, fmtDate } from "../lib/format.js";
 import { Card, StatCard, Spinner, ErrorMsg } from "../components/ui.jsx";
 import { useWorkspace } from "../App.jsx";
 
@@ -297,8 +297,12 @@ export default function Dashboard() {
 
 function AccountReconciliation({ stats, profile }) {
   const seedMoney = Number(profile?.seed_money || 0);
-  // Bank balance: seed + trading income - company expenses - transfers out to PayPal
-  const bankBalance = r2(seedMoney + stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut);
+  const actualBankBalance = profile?.bank_balance != null ? Number(profile.bank_balance) : null;
+  const bankBalanceDate = profile?.bank_balance_date || null;
+  // Calculated bank balance: seed + trading income - company expenses - transfers out
+  const calcBankBalance = r2(seedMoney + stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut);
+  // Use actual balance from CSV if available, otherwise calculated
+  const bankBalance = actualBankBalance != null ? actualBankBalance : calcBankBalance;
   // PayPal balance: money transferred in from bank - author payouts - fees
   const paypalBalance = r2(stats.ppTransfersIn - stats.paypalExpenses);
   const cashPosition = r2(bankBalance + paypalBalance);
@@ -327,8 +331,12 @@ function AccountReconciliation({ stats, profile }) {
         <div>
           <div style={{ fontSize: 12, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Balances</div>
           {seedMoney > 0 && <Row label="Seed Capital" value={seedMoney} color={PALETTE.blue} />}
-          <Row label="Bank (trading)" value={r2(stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut)} />
-          {stats.bankTransfersOut > 0 && <Row label="  ↳ incl. transfers to PayPal" value={r2(-stats.bankTransfersOut)} color={PALETTE.textMuted} indent />}
+          <Row
+            label={actualBankBalance != null
+              ? `Bank (from statement${bankBalanceDate ? ` ${fmtDate(bankBalanceDate)}` : ""})`
+              : "Bank (calculated)"}
+            value={bankBalance}
+          />
           {stats.ppTransfersIn > 0 || stats.paypalExpenses > 0 ? (
             <Row label="PayPal" value={paypalBalance} />
           ) : null}

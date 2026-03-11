@@ -92,7 +92,7 @@ const api = {
 
   import: {
     parse: (csv, source) => request("/api/import/parse", { method: "POST", body: JSON.stringify({ csv, source }) }),
-    confirm: (transactions) => request("/api/import/confirm", { method: "POST", body: JSON.stringify({ transactions }) }),
+    confirm: (transactions, closingBalance) => request("/api/import/confirm", { method: "POST", body: JSON.stringify({ transactions, closingBalance: closingBalance?.balance, closingBalanceDate: closingBalance?.date }) }),
   },
 
   export: {

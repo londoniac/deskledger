@@ -49,8 +49,9 @@ export default function Import() {
     setMessage({ type: "", text: "" });
     try {
       const newTxns = preview.transactions.filter((t) => !t.isDuplicate);
-      const result = await api.import.confirm(newTxns);
-      setMessage({ type: "success", text: `Imported ${result.imported} transactions successfully` });
+      const result = await api.import.confirm(newTxns, preview.closingBalance);
+      const balMsg = preview.closingBalance ? ` Bank balance updated to ${fmt(preview.closingBalance.balance)}.` : "";
+      setMessage({ type: "success", text: `Imported ${result.imported} transactions successfully.${balMsg}` });
       setPreview(null);
       setFile(null);
       setCsvText("");
@@ -115,6 +116,11 @@ export default function Import() {
               <Badge color={PALETTE.income}>{preview.newCount} new</Badge>
               {preview.duplicateCount > 0 && <Badge color={PALETTE.warning}>{preview.duplicateCount} duplicates</Badge>}
               <span style={{ fontSize: 12, color: PALETTE.textMuted }}>{preview.total} total rows</span>
+              {preview.closingBalance && (
+                <span style={{ fontSize: 12, color: PALETTE.accent, fontWeight: 600, fontFamily: "JetBrains Mono, monospace" }}>
+                  Balance: {fmt(preview.closingBalance.balance)}
+                </span>
+              )}
             </div>
           </div>
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { parseCSV, normalizeTransactions, autoCategory } from "../services/csv.js";
+import { parseCSV, normalizeTransactions, autoCategory, extractClosingBalance } from "../services/csv.js";
 
 const router = Router();
 
@@ -38,11 +38,15 @@ router.post("/parse", async (req, res, next) => {
       isDuplicate: existingIds.has(t.id),
     }));
 
+    // Extract closing balance from CSV (e.g. Monzo Balance column)
+    const closingBalance = extractClosingBalance(rows);
+
     res.json({
       total: preview.length,
       newCount: preview.filter((t) => !t.isDuplicate).length,
       duplicateCount: preview.filter((t) => t.isDuplicate).length,
       transactions: preview,
+      closingBalance,
     });
   } catch (err) {
     next(err);
@@ -81,6 +85,20 @@ router.post("/confirm", async (req, res, next) => {
       .select();
 
     if (error) throw error;
+
+    // Save closing balance if provided (from CSV parse step)
+    const { closingBalance, closingBalanceDate } = req.body;
+    if (closingBalance != null) {
+      await req.supabase
+        .from("user_profiles")
+        .update({
+          bank_balance: closingBalance,
+          bank_balance_date: closingBalanceDate || new Date().toISOString().split("T")[0],
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", req.userId);
+    }
+
     res.json({ success: true, imported: (data || []).length });
   } catch (err) {
     next(err);
