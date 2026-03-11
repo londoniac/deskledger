@@ -10,6 +10,7 @@ export default function Dashboard() {
   const { mode } = useWorkspace();
   const [transactions, setTransactions] = useState([]);
   const [paypalTxns, setPaypalTxns] = useState([]);
+  const [personalExpenses, setPersonalExpenses] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,10 +20,11 @@ export default function Dashboard() {
     async function load() {
       try {
         // Fetch independently so one failure doesn't block others
-        const [txnResult, profResult, ppResult] = await Promise.allSettled([
+        const [txnResult, profResult, ppResult, peResult] = await Promise.allSettled([
           api.transactions.getAll(),
           api.profile.get(),
           mode === "business" ? api.paypal.getTransactions() : Promise.resolve([]),
+          mode === "business" ? api.expenses.getAll() : Promise.resolve([]),
         ]);
 
         if (txnResult.status === "fulfilled") setTransactions(txnResult.value || []);
@@ -32,6 +34,7 @@ export default function Dashboard() {
         else console.warn("Profile fetch failed:", profResult.reason);
 
         if (ppResult.status === "fulfilled") setPaypalTxns(ppResult.value || []);
+        if (peResult.status === "fulfilled") setPersonalExpenses(peResult.value || []);
       } catch (e) {
         setError(e.message);
       } finally {
@@ -83,8 +86,14 @@ export default function Dashboard() {
     // But we track it for reconciliation (PayPal balance = transfers_in - payouts - fees)
     let paypalIncome = 0;
 
+    // Personal expenses (reimbursable by company)
+    const totalPersonalExpenses = r2(personalExpenses.reduce((s, e) => s + Number(e.amount), 0));
+    const reimbursementsOwed = r2(personalExpenses
+      .filter((e) => e.status === "pending")
+      .reduce((s, e) => s + Number(e.amount), 0));
+
     const combinedIncome = r2(totalIncome + paypalIncome);
-    const combinedExpenses = r2(companyExpenses + paypalExpenses);
+    const combinedExpenses = r2(companyExpenses + paypalExpenses + totalPersonalExpenses);
     const net = r2(combinedIncome - combinedExpenses);
     const taxRate = profile?.tax_rate || 19;
     const tax = isBusiness && net > 0 ? r2(net * (taxRate / 100)) : 0;
@@ -95,10 +104,11 @@ export default function Dashboard() {
       income: combinedIncome, expenses: combinedExpenses, net, tax, taxRate, margin, savingsRate,
       incomeCount: income.length,
       expenseCount: expenses.length + (isBusiness ? paypalTxns.filter((t) => t.type === "author_payout" || t.type === "fee").length : 0),
-      companyExpenses, paypalExpenses, paypalIncome, ppTransfersIn, bankTransfersOut, totalCapital,
+      companyExpenses, paypalExpenses, paypalIncome, ppTransfersIn, ppAuthorPayouts, ppFees,
+      bankTransfersOut, totalCapital, totalPersonalExpenses, reimbursementsOwed,
       bankIncome: totalIncome,
     };
-  }, [transactions, paypalTxns, profile, isBusiness]);
+  }, [transactions, paypalTxns, personalExpenses, profile, isBusiness]);
 
   const monthlyData = useMemo(() => {
     const active = transactions.filter((t) => !t.excluded && !EXCLUDE_FROM_INCOME.includes(t.category) && t.category !== "transfer");
@@ -160,8 +170,12 @@ export default function Dashboard() {
         <StatCard
           label={isBusiness ? "Total Expenses" : "Money Out"}
           value={fmt(stats.expenses)}
-          sub={isBusiness && stats.paypalExpenses > 0
-            ? `${fmt(stats.companyExpenses)} company + ${fmt(stats.paypalExpenses)} PayPal`
+          sub={isBusiness
+            ? [
+                `${fmt(stats.companyExpenses)} company`,
+                stats.paypalExpenses > 0 ? `${fmt(stats.paypalExpenses)} PayPal` : "",
+                stats.totalPersonalExpenses > 0 ? `${fmt(stats.totalPersonalExpenses)} personal` : "",
+              ].filter(Boolean).join(" + ")
             : `${stats.expenseCount} transactions`}
           color={PALETTE.expense}
         />
@@ -299,24 +313,29 @@ function AccountReconciliation({ stats, profile }) {
   const seedMoney = Number(profile?.seed_money || 0);
   const actualBankBalance = profile?.bank_balance != null ? Number(profile.bank_balance) : null;
   const bankBalanceDate = profile?.bank_balance_date || null;
-  // Calculated bank balance: seed + trading income - company expenses - transfers out
-  const calcBankBalance = r2(seedMoney + stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut);
-  // Use actual balance from CSV if available, otherwise calculated
-  const bankBalance = actualBankBalance != null ? actualBankBalance : calcBankBalance;
+
   // PayPal balance: money transferred in from bank - author payouts - fees
   const paypalBalance = r2(stats.ppTransfersIn - stats.paypalExpenses);
-  const cashPosition = r2(bankBalance + paypalBalance);
-  // P&L check: transfers cancel out (bank -X + PayPal +X = 0), so just trading activity
-  const plCheck = r2(seedMoney + stats.income - stats.expenses);
-  const variance = r2(cashPosition - plCheck);
 
-  const Row = ({ label, value, color, bold, indent }) => (
+  // Cash position
+  const bankBalance = actualBankBalance != null ? actualBankBalance : r2(seedMoney + stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut);
+  const totalCash = r2(bankBalance + paypalBalance);
+  const tradingGain = r2(totalCash - seedMoney);
+  const afterReimbursements = r2(tradingGain + stats.reimbursementsOwed);
+
+  // P&L check
+  const plNet = stats.net;
+  const plExpected = r2(seedMoney + plNet);
+  const variance = r2(tradingGain - plNet);
+
+  const Row = ({ label, value, color, bold, dim, sep }) => (
     <div style={{
       display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: "6px 0", marginLeft: indent ? 16 : 0,
+      padding: "6px 0",
+      borderTop: sep ? `1px solid ${PALETTE.border}` : "none",
       borderBottom: bold ? "none" : `1px solid ${PALETTE.border}22`,
     }}>
-      <span style={{ fontSize: 13, color: bold ? PALETTE.text : PALETTE.textDim, fontWeight: bold ? 600 : 400 }}>{label}</span>
+      <span style={{ fontSize: 13, color: dim ? PALETTE.textMuted : bold ? PALETTE.text : PALETTE.textDim, fontWeight: bold ? 600 : 400 }}>{label}</span>
       <span style={{
         fontSize: 14, fontFamily: "JetBrains Mono, monospace",
         fontWeight: bold ? 700 : 500, color: color || PALETTE.text,
@@ -324,37 +343,65 @@ function AccountReconciliation({ stats, profile }) {
     </div>
   );
 
+  const SectionLabel = ({ children }) => (
+    <div style={{ fontSize: 12, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+      {children}
+    </div>
+  );
+
   return (
     <Card style={{ marginBottom: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 600, color: PALETTE.text, marginBottom: 16 }}>Account Reconciliation</h3>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        {/* Left: Cash Position */}
         <div>
-          <div style={{ fontSize: 12, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Balances</div>
-          {seedMoney > 0 && <Row label="Seed Capital" value={seedMoney} color={PALETTE.blue} />}
+          <SectionLabel>Cash Position</SectionLabel>
           <Row
             label={actualBankBalance != null
-              ? `Bank (from statement${bankBalanceDate ? ` ${fmtDate(bankBalanceDate)}` : ""})`
-              : "Bank (calculated)"}
+              ? `Monzo Bank (from statement${bankBalanceDate ? ` ${fmtDate(bankBalanceDate)}` : ""})`
+              : "Monzo Bank (calculated)"}
             value={bankBalance}
           />
-          {stats.ppTransfersIn > 0 || stats.paypalExpenses > 0 ? (
-            <Row label="PayPal" value={paypalBalance} />
-          ) : null}
-          <Row label="Cash Position" value={cashPosition} color={cashPosition >= 0 ? PALETTE.income : PALETTE.expense} bold />
+          {(stats.ppTransfersIn > 0 || stats.paypalExpenses > 0) && (
+            <Row label="PayPal Balance (from sync)" value={paypalBalance} />
+          )}
+          <Row label="Total Cash" value={totalCash} bold />
+          {seedMoney > 0 && <Row label="Less: Seed Capital" value={-seedMoney} color={PALETTE.blue} />}
+          <Row label="Trading Gain / (Loss)" value={tradingGain} color={tradingGain >= 0 ? PALETTE.income : PALETTE.expense} bold sep />
+          {stats.reimbursementsOwed > 0 && (
+            <>
+              <Row label="Reimbursements owed" value={-stats.reimbursementsOwed} color={PALETTE.warning} />
+              <Row label="After reimbursements" value={afterReimbursements} bold />
+            </>
+          )}
         </div>
+
+        {/* Right: P&L Check */}
         <div>
-          <div style={{ fontSize: 12, color: PALETTE.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>P&L Check</div>
+          <SectionLabel>Profit & Loss Check</SectionLabel>
           <Row label="Trading Income" value={stats.income} color={PALETTE.income} />
-          <Row label="Total Expenses" value={stats.expenses} color={PALETTE.expense} />
-          <Row label="Net Profit" value={stats.net} color={stats.net >= 0 ? PALETTE.income : PALETTE.expense} />
-          <Row label="+ Seed Capital" value={seedMoney} color={PALETTE.blue} />
-          <Row label="Expected Cash" value={plCheck} bold />
+          <Row label="Bank Expenses (excl. transfers)" value={-stats.companyExpenses} color={PALETTE.expense} />
+          {stats.ppAuthorPayouts > 0 && (
+            <Row label="PayPal Author Payouts" value={-stats.ppAuthorPayouts} color={PALETTE.expense} />
+          )}
+          {stats.ppFees > 0 && (
+            <Row label="PayPal Fees" value={-stats.ppFees} color={PALETTE.expense} />
+          )}
+          {stats.totalPersonalExpenses > 0 && (
+            <Row label="Personal Expenses" value={-stats.totalPersonalExpenses} color={PALETTE.expense} />
+          )}
+          <Row label="Net Profit / (Loss)" value={plNet} color={plNet >= 0 ? PALETTE.income : PALETTE.expense} bold sep />
           <div style={{
-            marginTop: 8, padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
-            background: Math.abs(variance) < 0.01 ? PALETTE.accentDim : PALETTE.dangerDim,
-            color: Math.abs(variance) < 0.01 ? PALETTE.accent : PALETTE.danger,
+            marginTop: 8, padding: "8px 12px", borderRadius: 6, fontSize: 12,
+            background: Math.abs(variance) < 1 ? PALETTE.accentDim : PALETTE.dangerDim,
+            color: Math.abs(variance) < 1 ? PALETTE.accent : PALETTE.danger,
           }}>
-            Variance: {fmt(variance)} {Math.abs(variance) < 0.01 ? "(balanced)" : ""}
+            <div style={{ fontWeight: 600 }}>Variance (P&L vs Cash): {fmt(variance)}</div>
+            {Math.abs(variance) >= 1 && (
+              <div style={{ fontSize: 11, marginTop: 2, opacity: 0.8 }}>
+                Variance is due to GBP conversion rounding, timing differences, or uncategorised transfers
+              </div>
+            )}
           </div>
         </div>
       </div>
