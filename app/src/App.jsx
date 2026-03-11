@@ -16,6 +16,7 @@ import VATReturns from "./pages/VATReturns.jsx";
 import FixedAssets from "./pages/FixedAssets.jsx";
 import Reports from "./pages/Reports.jsx";
 import Expenses from "./pages/Expenses.jsx";
+import PayPalPage from "./pages/PayPal.jsx";
 
 // Workspace context — available to all child components
 const WorkspaceContext = createContext({ mode: "business" });
@@ -48,10 +49,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [mode, setMode] = useState(() => localStorage.getItem("dl_mode") || "business");
   const [profile, setProfile] = useState(null);
+  const [paypalConnected, setPaypalConnected] = useState(false);
 
   useEffect(() => {
     if (user) {
       api.profile.get().then(setProfile).catch(() => {});
+      api.paypal.hasCredentials()
+        .then((r) => setPaypalConnected(r.hasCredentials))
+        .catch(() => {});
     }
   }, [user]);
 
@@ -61,7 +66,10 @@ export default function App() {
     setActiveTab("dashboard"); // reset to dashboard on switch
   };
 
-  const tabs = mode === "personal" ? PERSONAL_TABS : BUSINESS_TABS;
+  const businessTabs = paypalConnected
+    ? [...BUSINESS_TABS.slice(0, 3), { id: "paypal", label: "PayPal" }, ...BUSINESS_TABS.slice(3)]
+    : BUSINESS_TABS;
+  const tabs = mode === "personal" ? PERSONAL_TABS : businessTabs;
   const displayName = mode === "business"
     ? (profile?.company_name || "Business")
     : "Personal";
@@ -160,13 +168,14 @@ export default function App() {
           {activeTab === "transactions" && <Transactions />}
           {activeTab === "debts" && <Debts />}
           {activeTab === "import" && <Import />}
+          {activeTab === "paypal" && <PayPalPage />}
           {activeTab === "expenses" && <Expenses />}
           {activeTab === "dividends" && <Dividends />}
           {activeTab === "dla" && <DLA />}
           {activeTab === "assets" && <FixedAssets />}
           {activeTab === "vat" && <VATReturns />}
           {activeTab === "reports" && <Reports />}
-          {activeTab === "settings" && <Settings onProfileUpdate={setProfile} />}
+          {activeTab === "settings" && <Settings onProfileUpdate={setProfile} onPaypalConnected={() => setPaypalConnected(true)} />}
         </div>
       </div>
     </WorkspaceContext.Provider>

@@ -31,7 +31,7 @@ function Toggle({ value, onChange, label }) {
   );
 }
 
-export default function Settings({ onProfileUpdate }) {
+export default function Settings({ onProfileUpdate, onPaypalConnected }) {
   const { mode } = useWorkspace();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -176,7 +176,7 @@ export default function Settings({ onProfileUpdate }) {
       )}
 
       {/* PayPal Integration (Business only) */}
-      {isBusiness && <PayPalSettings profile={profile} />}
+      {isBusiness && <PayPalSettings profile={profile} onPaypalConnected={onPaypalConnected} />}
 
       {/* Save */}
       <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
@@ -219,7 +219,7 @@ export default function Settings({ onProfileUpdate }) {
   );
 }
 
-function PayPalSettings({ profile }) {
+function PayPalSettings({ profile, onPaypalConnected }) {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [sandbox, setSandbox] = useState(false);
@@ -262,6 +262,7 @@ function PayPalSettings({ profile }) {
     try {
       await api.paypal.saveCredentials(clientId, clientSecret, sandbox);
       setHasCredentials(true);
+      onPaypalConnected?.();
       setMessage({ type: "success", text: "PayPal credentials saved securely" });
       setClientId("");
       setClientSecret("");

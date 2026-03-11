@@ -3,16 +3,14 @@
 const KNOWN_CODES = {
   T0303: "transfer_in",
   T0300: "transfer_in",
-  T0001: "author_payout",
   T1503: "author_payout",
-  T1107: "author_payout",
   T0700: "fee",
   T1106: "refund",
   T1201: "refund",
 };
 
-// Codes to skip (internal bookkeeping that duplicates real transactions)
-const SKIP_CODES = new Set(["T0003", "T0200", "T0400", "T0600"]);
+// Codes to skip (internal bookkeeping and duplicates of real transactions)
+const SKIP_CODES = new Set(["T0001", "T0003", "T0200", "T0400", "T0600", "T1107"]);
 
 async function getAccessToken(clientId, clientSecret, sandbox = false) {
   const host = sandbox ? "api-m.sandbox.paypal.com" : "api-m.paypal.com";
