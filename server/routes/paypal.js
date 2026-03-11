@@ -148,6 +148,7 @@ router.post("/sync", checkAddon, async (req, res) => {
       kept: result.transactions.length,
       skipped: result.skipped,
       currencyDupes: result.currencyDupes,
+      notifDupes: result.notifDupes || 0,
       newImported: newTxns.length,
       alreadyExisted: result.transactions.length - newTxns.length,
     });
@@ -165,6 +166,16 @@ router.get("/transactions", checkAddon, async (req, res) => {
     .order("date", { ascending: false });
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
+});
+
+// DELETE /api/paypal/transactions — clear all PayPal transactions
+router.delete("/transactions", checkAddon, async (req, res) => {
+  const { error, count } = await req.supabase
+    .from("paypal_transactions")
+    .delete({ count: "exact" })
+    .eq("user_id", req.userId);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ success: true, deleted: count });
 });
 
 // DELETE /api/paypal/transactions/:id

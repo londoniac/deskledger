@@ -70,6 +70,18 @@ export default function PayPal() {
     setSyncing(false);
   };
 
+  const handleClearAll = async () => {
+    if (!confirm(`Delete all ${transactions.length} PayPal transactions? This cannot be undone.`)) return;
+    try {
+      const res = await api.paypal.clearAll();
+      setTransactions([]);
+      setSyncResult(null);
+      setMessage({ type: "success", text: `Cleared ${res.deleted} PayPal transactions.` });
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
   const deleteTransaction = async (id) => {
     if (!confirm("Delete this PayPal transaction?")) return;
     try {
@@ -145,6 +157,11 @@ export default function PayPal() {
           <Button onClick={handleSync} disabled={syncing}>
             {syncing ? "Syncing..." : "Sync from PayPal"}
           </Button>
+          {transactions.length > 0 && (
+            <Button onClick={handleClearAll} style={{ background: PALETTE.danger }}>
+              Clear All
+            </Button>
+          )}
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 12, color: PALETTE.textMuted }}>{filtered.length} of {transactions.length} transactions</span>
             <select
@@ -169,7 +186,7 @@ export default function PayPal() {
           <div style={{ marginTop: 12, padding: "12px 16px", background: PALETTE.accentDim, borderRadius: 8, fontSize: 13, color: PALETTE.accent }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Sync complete</div>
             <div>Fetched {syncResult.totalFetched} raw events from PayPal</div>
-            <div>{syncResult.kept} kept after filtering ({syncResult.skipped} internal entries skipped, {syncResult.currencyDupes} currency duplicates removed)</div>
+            <div>{syncResult.kept} kept after filtering ({syncResult.skipped} internal entries skipped, {syncResult.currencyDupes} currency duplicates removed{syncResult.notifDupes > 0 ? `, ${syncResult.notifDupes} notification duplicates removed` : ""})</div>
             <div style={{ fontWeight: 600, marginTop: 4 }}>
               {syncResult.newImported} new transactions imported
               {syncResult.alreadyExisted > 0 && `, ${syncResult.alreadyExisted} already existed`}
@@ -245,8 +262,8 @@ export default function PayPal() {
                       <div style={{ fontSize: 12, color: PALETTE.textMuted, fontFamily: "JetBrains Mono, monospace" }}>
                         {t.currency !== "GBP" ? `${t.currency} ${Number(t.amount).toFixed(2)}` : "—"}
                       </div>
-                      <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: TYPE_COLOURS[t.type] || PALETTE.text }}>
-                        {fmt(t.gbp_amount)}
+                      <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.gbp_amount == null ? PALETTE.warning : (TYPE_COLOURS[t.type] || PALETTE.text) }}>
+                        {t.gbp_amount != null ? fmt(t.gbp_amount) : "No rate"}
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <button

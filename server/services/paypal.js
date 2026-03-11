@@ -109,7 +109,7 @@ function mapTransaction(ppTxn) {
     description,
     amount: Math.abs(amount),
     currency,
-    gbp_amount: gbpAmount || Math.abs(amount),
+    gbp_amount: gbpAmount,
     type,
     author_name: payer.payer_name?.alternate_full_name || "",
     event_code: eventCode,
@@ -150,6 +150,30 @@ function deduplicateCurrencyPairs(transactions) {
   };
 }
 
+// Remove notification duplicates — PayPal fires both T1503 (mass payment) and a
+// companion notification event (e.g. "You have a payout from Vox9!") for the same money.
+// Match by same date + same gbp_amount where one is author_payout and one is "other".
+function deduplicateNotificationPairs(transactions) {
+  // Build a set of (date, gbp_amount) keys from author_payout entries
+  const payoutKeys = new Set();
+  transactions.forEach((t) => {
+    if (t.type === "author_payout") {
+      payoutKeys.add(`${t.date}|${t.gbp_amount}`);
+    }
+  });
+
+  let notifDupes = 0;
+  const filtered = transactions.filter((t) => {
+    if (t.type === "other" && payoutKeys.has(`${t.date}|${t.gbp_amount}`)) {
+      notifDupes++;
+      return false;
+    }
+    return true;
+  });
+
+  return { filtered, notifDupes };
+}
+
 export async function syncTransactions(clientId, clientSecret, startDate, endDate, sandbox = false) {
   const token = await getAccessToken(clientId, clientSecret, sandbox);
 
@@ -175,12 +199,15 @@ export async function syncTransactions(clientId, clientSecret, startDate, endDat
   const skipped = mapped.length - kept.length;
 
   // Deduplicate currency pairs
-  const { filtered, currencyDupes } = deduplicateCurrencyPairs(kept);
+  const { filtered: afterCurrency, currencyDupes } = deduplicateCurrencyPairs(kept);
+
+  // Deduplicate notification pairs (e.g. "You have a payout from Vox9!" companion events)
+  const { filtered, notifDupes } = deduplicateNotificationPairs(afterCurrency);
 
   // Clean up internal fields
   const clean = filtered.map(({ _skip, _currency, ...t }) => t);
 
-  return { transactions: clean, totalRaw: allRaw.length, skipped, currencyDupes };
+  return { transactions: clean, totalRaw: allRaw.length, skipped, currencyDupes, notifDupes };
 }
 
 export async function testConnection(clientId, clientSecret, sandbox = false) {

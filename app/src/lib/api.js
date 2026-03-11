@@ -107,6 +107,7 @@ const api = {
     sync: (start_date, end_date) => request("/api/paypal/sync", { method: "POST", body: JSON.stringify({ start_date, end_date }) }),
     getTransactions: () => request("/api/paypal/transactions"),
     deleteTransaction: (id) => request(`/api/paypal/transactions/${id}`, { method: "DELETE" }),
+    clearAll: () => request("/api/paypal/transactions", { method: "DELETE" }),
   },
 
   debts: {

@@ -60,6 +60,7 @@ export default function Dashboard() {
     let paypalExpenses = 0;
     let ppAuthorPayouts = 0;
     let ppFees = 0;
+    let ppTransfersIn = 0;
     if (isBusiness && paypalTxns.length > 0) {
       ppAuthorPayouts = r2(paypalTxns
         .filter((t) => t.type === "author_payout")
@@ -67,11 +68,15 @@ export default function Dashboard() {
       ppFees = r2(paypalTxns
         .filter((t) => t.type === "fee")
         .reduce((s, t) => s + Number(t.gbp_amount || t.amount), 0));
+      ppTransfersIn = r2(paypalTxns
+        .filter((t) => t.type === "transfer_in")
+        .reduce((s, t) => s + Number(t.gbp_amount || t.amount), 0));
       paypalExpenses = r2(ppAuthorPayouts + ppFees);
     }
 
-    // PayPal income is NOT counted in trading income — it's transfer_in from bank
+    // PayPal transfer_in is NOT trading income — it's money moving from bank to PayPal
     // (the bank side is already excluded as inter-account transfer)
+    // But we track it for reconciliation (PayPal balance = transfers_in - payouts - fees)
     let paypalIncome = 0;
 
     const combinedIncome = r2(totalIncome + paypalIncome);
@@ -84,9 +89,9 @@ export default function Dashboard() {
 
     return {
       income: combinedIncome, expenses: combinedExpenses, net, tax, taxRate, margin, savingsRate,
-      incomeCount: income.length + (isBusiness ? paypalTxns.filter((t) => t.type === "income").length : 0),
-      expenseCount: expenses.length + (isBusiness ? paypalTxns.filter((t) => t.type === "expense").length : 0),
-      companyExpenses, paypalExpenses, paypalIncome, totalCapital,
+      incomeCount: income.length,
+      expenseCount: expenses.length + (isBusiness ? paypalTxns.filter((t) => t.type === "author_payout" || t.type === "fee").length : 0),
+      companyExpenses, paypalExpenses, paypalIncome, ppTransfersIn, totalCapital,
       bankIncome: totalIncome,
     };
   }, [transactions, paypalTxns, profile, isBusiness]);
@@ -101,15 +106,17 @@ export default function Dashboard() {
       if (t.type === "income") months[key].income += Number(t.amount);
       else months[key].expenses += Number(t.amount);
     });
-    // Include PayPal in monthly chart
+    // Include PayPal author payouts + fees in monthly chart as expenses
+    // Exclude transfer_in (inter-account), other, refund from chart
     if (isBusiness) {
-      paypalTxns.forEach((t) => {
-        const d = new Date(t.date);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        if (!months[key]) months[key] = { month: key, income: 0, expenses: 0 };
-        if (t.type === "income") months[key].income += Number(t.amount);
-        else months[key].expenses += Number(t.amount);
-      });
+      paypalTxns
+        .filter((t) => t.type === "author_payout" || t.type === "fee")
+        .forEach((t) => {
+          const d = new Date(t.date);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          if (!months[key]) months[key] = { month: key, income: 0, expenses: 0 };
+          months[key].expenses += Number(t.gbp_amount || t.amount);
+        });
     }
     return Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).map((m) => ({
       ...m, income: r2(m.income), expenses: r2(m.expenses),
@@ -125,13 +132,13 @@ export default function Dashboard() {
       const label = cat ? cat.label : t.category || "Uncategorised";
       cats[label] = (cats[label] || 0) + Number(t.amount);
     });
-    // PayPal expenses by category
+    // PayPal author payouts + fees in category breakdown
     if (isBusiness) {
-      paypalTxns.filter((t) => t.type === "expense").forEach((t) => {
-        const cat = expenseCats.find((c) => c.id === t.category);
-        const label = cat ? cat.label : t.category || "PayPal";
-        cats[label] = (cats[label] || 0) + Number(t.amount);
+      let ppTotal = 0;
+      paypalTxns.filter((t) => t.type === "author_payout" || t.type === "fee").forEach((t) => {
+        ppTotal += Number(t.gbp_amount || t.amount);
       });
+      if (ppTotal > 0) cats["PayPal Payouts"] = (cats["PayPal Payouts"] || 0) + ppTotal;
     }
     return Object.entries(cats)
       .map(([name, value]) => ({ name, value: r2(value) }))
@@ -286,8 +293,10 @@ export default function Dashboard() {
 
 function AccountReconciliation({ stats, profile }) {
   const seedMoney = Number(profile?.seed_money || 0);
+  // Bank balance: seed + trading income - company expenses (transfers to PayPal are excluded as category=transfer)
   const bankBalance = r2(seedMoney + stats.bankIncome - stats.companyExpenses);
-  const paypalBalance = r2(stats.paypalIncome - stats.paypalExpenses);
+  // PayPal balance: money transferred in from bank - author payouts - fees
+  const paypalBalance = r2(stats.ppTransfersIn - stats.paypalExpenses);
   const cashPosition = r2(bankBalance + paypalBalance);
   const plCheck = r2(seedMoney + stats.income - stats.expenses);
   const variance = r2(cashPosition - plCheck);
