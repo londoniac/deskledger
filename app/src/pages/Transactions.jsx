@@ -222,6 +222,34 @@ export default function Transactions() {
     }
   };
 
+  const moveToPersonalExpenses = async (t) => {
+    if (!confirm(`Move "${t.description}" (${fmt(t.amount)}) to Personal Expenses?\n\nThis will exclude it from company totals and create a personal expense for reimbursement.`)) return;
+    try {
+      // 1. Create personal expense entry
+      await api.expenses.save({
+        id: `pe-${t.id}`,
+        date: t.date,
+        description: t.description,
+        amount: t.amount,
+        category: t.category || "",
+        supplier: t.description,
+        status: "pending",
+        invoice_ref: "",
+        notes: `Moved from bank transaction ${t.id}`,
+      });
+      // 2. Exclude the bank transaction
+      const updated = await api.transactions.update(t.id, {
+        excluded: true,
+        exclude_reason: "Moved to personal expenses",
+        updated_at: new Date().toISOString(),
+      });
+      setTransactions((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...updated } : x)));
+      setMessage({ type: "success", text: `Moved to Personal Expenses. View in the Expenses tab.` });
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
   // Invoice upload
   const handleFileSelect = (txnId) => {
     setUploadTarget(txnId);
@@ -664,7 +692,7 @@ export default function Transactions() {
                                 </div>
 
                                 {/* Action buttons */}
-                                <div style={{ display: "flex", gap: 8 }}>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                   <Button onClick={() => startEdit(t)} style={{ fontSize: 12, padding: "6px 14px" }}>Edit</Button>
                                   <Button
                                     variant={t.excluded ? "outline" : "ghost"}
@@ -673,6 +701,15 @@ export default function Transactions() {
                                   >
                                     {t.excluded ? "Include in Accounts" : "Exclude from Accounts"}
                                   </Button>
+                                  {t.type === "expense" && !t.excluded && t.exclude_reason !== "Moved to personal expenses" && (
+                                    <Button
+                                      variant="ghost"
+                                      onClick={() => moveToPersonalExpenses(t)}
+                                      style={{ fontSize: 12, padding: "6px 14px", color: PALETTE.purple }}
+                                    >
+                                      Move to Personal Expenses
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             )}
