@@ -100,6 +100,12 @@ function mapTransaction(ppTxn) {
     gbpAmount = Math.round((Math.abs(amount) / exchangeRate) * 100) / 100;
   }
 
+  // Log non-GBP transactions missing exchange rate so we can find alternative conversion fields
+  if (currency !== "GBP" && !exchangeRate) {
+    console.log(`[PayPal] No exchange rate for ${currency} ${amount} (${eventCode}). Raw transaction_info keys:`, Object.keys(info));
+    console.log(`[PayPal] Full transaction_info:`, JSON.stringify(info, null, 2));
+  }
+
   // Determine type from event code
   const type = KNOWN_CODES[eventCode] || "other";
 
