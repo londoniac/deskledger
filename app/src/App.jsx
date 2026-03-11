@@ -25,6 +25,7 @@ export function useWorkspace() { return useContext(WorkspaceContext); }
 const BUSINESS_TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "transactions", label: "Transactions" },
+  { id: "expenses", label: "Expenses" },
   { id: "import", label: "Import" },
   { id: "dividends", label: "Dividends" },
   { id: "dla", label: "DLA" },
