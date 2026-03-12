@@ -370,10 +370,24 @@ export default function Transactions() {
               options={[{ value: "all", label: "All Sources" }, ...sources.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))]}
             />
           )}
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: PALETTE.textDim, cursor: "pointer" }}>
-            <input type="checkbox" checked={showExcluded} onChange={(e) => setShowExcluded(e.target.checked)} />
-            Show excluded
-          </label>
+          {(() => {
+            const excludedCount = transactions.filter((t) => t.excluded).length;
+            return excludedCount > 0 ? (
+              <button
+                onClick={() => setShowExcluded(!showExcluded)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+                  fontSize: 12, fontWeight: 500, border: "none",
+                  background: showExcluded ? PALETTE.orange + "20" : PALETTE.bg,
+                  color: showExcluded ? PALETTE.orange : PALETTE.textMuted,
+                  transition: "all 0.2s",
+                }}
+              >
+                {showExcluded ? "Hide" : "Show"} {excludedCount} excluded
+              </button>
+            ) : null;
+          })()}
           <div style={{ marginLeft: "auto", fontSize: 12, color: PALETTE.textMuted }}>
             {filtered.length} of {transactions.length} transactions
           </div>
@@ -382,6 +396,35 @@ export default function Transactions() {
 
       {message.type === "error" && <ErrorMsg message={message.text} />}
       {message.type === "success" && <SuccessMsg message={message.text} />}
+
+      {/* Excluded summary banner */}
+      {showExcluded && (() => {
+        const excludedTxns = transactions.filter((t) => t.excluded);
+        if (excludedTxns.length === 0) return null;
+        const excludedTotal = r2(excludedTxns.reduce((s, t) => s + Number(t.amount), 0));
+        const reasons = {};
+        excludedTxns.forEach((t) => {
+          const r = t.exclude_reason || "Manually excluded";
+          reasons[r] = (reasons[r] || 0) + 1;
+        });
+        return (
+          <Card style={{ marginBottom: 16, borderLeft: `3px solid ${PALETTE.orange}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: PALETTE.orange, marginBottom: 4 }}>
+                  {excludedTxns.length} Excluded Transaction{excludedTxns.length !== 1 ? "s" : ""}
+                </div>
+                <div style={{ fontSize: 12, color: PALETTE.textMuted }}>
+                  {Object.entries(reasons).map(([reason, count]) => `${reason} (${count})`).join(" · ")}
+                </div>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: PALETTE.orange, fontFamily: "JetBrains Mono, monospace" }}>
+                {fmt(excludedTotal)}
+              </div>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Transaction groups */}
       {grouped.length === 0 ? (
@@ -459,6 +502,11 @@ export default function Transactions() {
                             <span style={{ fontSize: 10, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>&#9654;</span>
                             {t.description}
                             {(invoice || t.invoice_id) && <span style={{ fontSize: 10, color: PALETTE.accent }} title="Has invoice">&#128206;</span>}
+                            {t.excluded && t.exclude_reason && (
+                              <span style={{ fontSize: 10, color: PALETTE.orange, fontStyle: "italic", flexShrink: 0 }}>
+                                ({t.exclude_reason})
+                              </span>
+                            )}
                           </div>
                           <div><Badge color={t.source === "bank" ? PALETTE.blue : t.source === "paypal" ? PALETTE.cyan : PALETTE.textDim}>{t.source}</Badge></div>
                           <div onClick={(e) => e.stopPropagation()}>
