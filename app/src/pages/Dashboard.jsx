@@ -310,6 +310,7 @@ export default function Dashboard() {
 }
 
 function AccountReconciliation({ stats, profile }) {
+  const [showDiag, setShowDiag] = useState(false);
   const seedMoney = Number(profile?.seed_money || 0);
   const actualBankBalance = profile?.bank_balance != null ? Number(profile.bank_balance) : null;
   const bankBalanceDate = profile?.bank_balance_date || null;
@@ -327,6 +328,21 @@ function AccountReconciliation({ stats, profile }) {
   const plNet = stats.net;
   const plExpected = r2(seedMoney + plNet);
   const variance = r2(tradingGain - plNet);
+
+  // Diagnostic: rebuild cash side from components to find mismatch
+  const cashIncome = actualBankBalance != null
+    ? r2(bankBalance - seedMoney + stats.bankTransfersOut + stats.companyExpenses) // reverse-derive what income must be
+    : stats.bankIncome;
+  const cashExpenses = stats.companyExpenses;
+  const cashTransfersOut = stats.bankTransfersOut;
+  const cashPPIn = stats.ppTransfersIn;
+  const cashPPOut = stats.paypalExpenses;
+  // P&L side components
+  const plIncome = stats.income;
+  const plBankExp = stats.companyExpenses;
+  const plPPPayouts = stats.ppAuthorPayouts;
+  const plPPFees = stats.ppFees;
+  const plPersonal = stats.totalPersonalExpenses;
 
   const Row = ({ label, value, color, bold, dim, sep }) => (
     <div style={{
@@ -391,18 +407,95 @@ function AccountReconciliation({ stats, profile }) {
             <Row label="Personal Expenses" value={-stats.totalPersonalExpenses} color={PALETTE.expense} />
           )}
           <Row label="Net Profit / (Loss)" value={plNet} color={plNet >= 0 ? PALETTE.income : PALETTE.expense} bold sep />
-          <div style={{
-            marginTop: 8, padding: "8px 12px", borderRadius: 6, fontSize: 12,
-            background: Math.abs(variance) < 1 ? PALETTE.accentDim : PALETTE.dangerDim,
-            color: Math.abs(variance) < 1 ? PALETTE.accent : PALETTE.danger,
-          }}>
-            <div style={{ fontWeight: 600 }}>Variance (P&L vs Cash): {fmt(variance)}</div>
-            {Math.abs(variance) >= 1 && (
-              <div style={{ fontSize: 11, marginTop: 2, opacity: 0.8 }}>
-                Variance is due to GBP conversion rounding, timing differences, or uncategorised transfers
-              </div>
-            )}
+          <div
+            onClick={() => Math.abs(variance) >= 0.01 && setShowDiag(!showDiag)}
+            style={{
+              marginTop: 8, padding: "8px 12px", borderRadius: 6, fontSize: 12,
+              background: Math.abs(variance) < 1 ? PALETTE.accentDim : PALETTE.dangerDim,
+              color: Math.abs(variance) < 1 ? PALETTE.accent : PALETTE.danger,
+              cursor: Math.abs(variance) >= 0.01 ? "pointer" : "default",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontWeight: 600 }}>Variance (P&L vs Cash): {fmt(variance)}</div>
+              {Math.abs(variance) >= 0.01 && (
+                <span style={{ fontSize: 11, opacity: 0.7 }}>{showDiag ? "Hide details" : "Click to diagnose"}</span>
+              )}
+            </div>
           </div>
+          {showDiag && Math.abs(variance) >= 0.01 && (
+            <div style={{ marginTop: 8, padding: "12px 16px", borderRadius: 6, background: PALETTE.bg, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}>
+              <div style={{ fontWeight: 600, color: PALETTE.text, marginBottom: 10 }}>Variance Breakdown</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "4px 16px", fontFamily: "JetBrains Mono, monospace" }}>
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600, fontFamily: "inherit" }}>Component</div>
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600, textAlign: "right" }}>Cash Side</div>
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600, textAlign: "right" }}>P&L Side</div>
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600, textAlign: "right" }}>Diff</div>
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Bank Balance (statement)</div>
+                <div style={{ textAlign: "right", color: PALETTE.text }}>{fmt(bankBalance)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Seed Capital</div>
+                <div style={{ textAlign: "right", color: PALETTE.text }}>{fmt(seedMoney)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Trading Income</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+                <div style={{ textAlign: "right", color: PALETTE.income }}>{fmt(plIncome)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Bank Expenses</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+                <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(plBankExp)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Bank Transfers Out</div>
+                <div style={{ textAlign: "right", color: PALETTE.purple }}>{fmt(cashTransfersOut)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>excluded</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>PayPal Transfers In</div>
+                <div style={{ textAlign: "right", color: PALETTE.text }}>{fmt(cashPPIn)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>excluded</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>PayPal Payouts</div>
+                <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(stats.ppAuthorPayouts)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(plPPPayouts)}</div>
+                {(() => { const d = r2(stats.ppAuthorPayouts - plPPPayouts); return <div style={{ textAlign: "right", color: Math.abs(d) > 0.01 ? PALETTE.danger : PALETTE.textMuted }}>{Math.abs(d) > 0.01 ? fmt(d) : "—"}</div>; })()}
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>PayPal Fees</div>
+                <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(stats.ppFees)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(plPPFees)}</div>
+                {(() => { const d = r2(stats.ppFees - plPPFees); return <div style={{ textAlign: "right", color: Math.abs(d) > 0.01 ? PALETTE.danger : PALETTE.textMuted }}>{Math.abs(d) > 0.01 ? fmt(d) : "—"}</div>; })()}
+
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Personal Expenses</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>not in cash</div>
+                <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(plPersonal)}</div>
+                {plPersonal > 0 ? <div style={{ textAlign: "right", color: PALETTE.warning }}>{fmt(plPersonal)}</div> : <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>}
+
+                <div style={{ borderTop: `1px solid ${PALETTE.border}`, paddingTop: 6, color: PALETTE.text, fontWeight: 600, fontFamily: "system-ui" }}>Result</div>
+                <div style={{ borderTop: `1px solid ${PALETTE.border}`, paddingTop: 6, textAlign: "right", fontWeight: 600, color: tradingGain >= 0 ? PALETTE.income : PALETTE.expense }}>{fmt(tradingGain)}</div>
+                <div style={{ borderTop: `1px solid ${PALETTE.border}`, paddingTop: 6, textAlign: "right", fontWeight: 600, color: plNet >= 0 ? PALETTE.income : PALETTE.expense }}>{fmt(plNet)}</div>
+                <div style={{ borderTop: `1px solid ${PALETTE.border}`, paddingTop: 6, textAlign: "right", fontWeight: 700, color: PALETTE.danger }}>{fmt(variance)}</div>
+              </div>
+
+              <div style={{ marginTop: 12, fontSize: 11, color: PALETTE.textMuted, lineHeight: 1.6 }}>
+                {stats.totalPersonalExpenses > 0 && Math.abs(r2(variance - stats.totalPersonalExpenses)) < 1 && (
+                  <div>The variance roughly matches Personal Expenses ({fmt(stats.totalPersonalExpenses)}). Personal expenses reduce P&L profit but don't come from the bank account — this is expected.</div>
+                )}
+                {Math.abs(variance) > 0 && Math.abs(variance) < 5 && (
+                  <div>Small variances under £5 are usually PayPal GBP conversion rounding.</div>
+                )}
+                {actualBankBalance == null && (
+                  <div>Bank balance is calculated, not from a statement. Re-import your latest CSV to get an accurate figure.</div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Card>
