@@ -35,6 +35,8 @@ router.post("/", async (req, res, next) => {
       status: req.body.status || "pending",
       invoice_ref: req.body.invoice_ref || req.body.invoiceRef || "",
       notes: req.body.notes || "",
+      original_amount: req.body.original_amount || null,
+      original_currency: req.body.original_currency || null,
       updated_at: new Date().toISOString(),
     };
 

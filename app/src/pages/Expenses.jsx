@@ -21,7 +21,10 @@ export default function Expenses() {
     date: new Date().toISOString().split("T")[0],
     description: "", amount: "", category: "office", supplier: "",
     status: "pending", invoice_ref: "", notes: "",
+    original_amount: "", original_currency: "",
   });
+  const [formFile, setFormFile] = useState(null);
+  const formFileRef = useRef();
 
   useEffect(() => { load(); }, []);
 
@@ -44,14 +47,18 @@ export default function Expenses() {
     }
     try {
       setError("");
-      const payload = { ...form, id: editing || `exp-${Date.now()}` };
+      const id = editing || `exp-${Date.now()}`;
+      const payload = { ...form, id };
       if (editing) {
         await api.expenses.update(editing, form);
-        setSuccess("Expense updated");
       } else {
         await api.expenses.save(payload);
-        setSuccess("Expense added");
       }
+      // Upload receipt file if one was selected
+      if (formFile) {
+        await api.expenses.uploadReceipt(id, formFile);
+      }
+      setSuccess(editing ? "Expense updated" : "Expense added");
       setShowForm(false);
       setEditing(null);
       resetForm();
@@ -110,13 +117,15 @@ export default function Expenses() {
       date: exp.date, description: exp.description, amount: exp.amount,
       category: exp.category, supplier: exp.supplier || "",
       status: exp.status, invoice_ref: exp.invoice_ref || "", notes: exp.notes || "",
+      original_amount: exp.original_amount || "", original_currency: exp.original_currency || "",
     });
     setEditing(exp.id);
     setShowForm(true);
   }
 
   function resetForm() {
-    setForm({ date: new Date().toISOString().split("T")[0], description: "", amount: "", category: "office", supplier: "", status: "pending", invoice_ref: "", notes: "" });
+    setForm({ date: new Date().toISOString().split("T")[0], description: "", amount: "", category: "office", supplier: "", status: "pending", invoice_ref: "", notes: "", original_amount: "", original_currency: "" });
+    setFormFile(null);
   }
 
   function toggleExpand(id) {
@@ -209,6 +218,25 @@ export default function Expenses() {
               <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="29.99" />
             </div>
             <div>
+              <Label>Original Amount (optional)</Label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Select
+                  value={form.original_currency || ""}
+                  onChange={(v) => setForm({ ...form, original_currency: v })}
+                  options={[{ value: "", label: "—" }, { value: "USD", label: "USD" }, { value: "EUR", label: "EUR" }, { value: "MXN", label: "MXN" }]}
+                  style={{ width: 80 }}
+                />
+                <Input
+                  type="number" step="0.01"
+                  value={form.original_amount}
+                  onChange={(e) => setForm({ ...form, original_amount: e.target.value })}
+                  placeholder="Invoice amount"
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 4 }}>If the invoice is in a foreign currency, enter it here. The GBP amount above should be what you actually paid.</div>
+            </div>
+            <div>
               <Label>Category</Label>
               <Select value={form.category} onChange={(v) => setForm({ ...form, category: v })} options={categoryOptions} style={{ width: "100%" }} />
             </div>
@@ -224,9 +252,53 @@ export default function Expenses() {
               <Label>Invoice Reference</Label>
               <Input value={form.invoice_ref} onChange={(e) => setForm({ ...form, invoice_ref: e.target.value })} placeholder="Optional" />
             </div>
-            <div style={{ gridColumn: "span 2" }}>
+            <div>
               <Label>Notes</Label>
               <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
+            </div>
+            <div style={{ gridColumn: "span 2" }}>
+              <Label>Receipt / Invoice</Label>
+              <input
+                ref={formFileRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files[0];
+                  if (!f) return;
+                  const allowed = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"];
+                  if (!allowed.includes(f.type)) {
+                    setError("Only PDF, JPEG, PNG, GIF, and WebP files are supported");
+                    return;
+                  }
+                  if (f.size > 10 * 1024 * 1024) {
+                    setError("File must be under 10MB");
+                    return;
+                  }
+                  setFormFile(f);
+                }}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Button variant="outline" onClick={() => formFileRef.current?.click()} style={{ fontSize: 12 }}>
+                  {formFile ? "Change File" : "Attach File"}
+                </Button>
+                {formFile && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 13, color: PALETTE.income }}>&#128206; {formFile.name}</span>
+                    <span style={{ fontSize: 11, color: PALETTE.textMuted }}>({(formFile.size / 1024).toFixed(1)} KB)</span>
+                    <button
+                      onClick={() => { setFormFile(null); if (formFileRef.current) formFileRef.current.value = ""; }}
+                      style={{ background: "none", border: "none", color: PALETTE.danger, cursor: "pointer", fontSize: 14, padding: "0 4px" }}
+                      title="Remove file"
+                    >&times;</button>
+                  </div>
+                )}
+                {!formFile && editing && (
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted }}>
+                    {expenses.find((e) => e.id === editing)?.receipt_path ? "Existing receipt will be kept unless replaced" : "No file attached"}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -330,6 +402,14 @@ function ExpenseRow({ expense, isExpanded, onToggle, onEdit, onDelete, onUpload,
               <div style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 4 }}>Invoice Ref</div>
               <div style={{ fontSize: 13, color: PALETTE.text }}>{expense.invoice_ref || "—"}</div>
             </div>
+            {expense.original_amount && (
+              <div>
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 4 }}>Original Amount</div>
+                <div style={{ fontSize: 13, color: PALETTE.text, fontFamily: "JetBrains Mono, monospace" }}>
+                  {expense.original_currency || "USD"} {Number(expense.original_amount).toFixed(2)}
+                </div>
+              </div>
+            )}
             {expense.notes && (
               <div style={{ gridColumn: "span 3" }}>
                 <div style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 4 }}>Notes</div>
