@@ -40,12 +40,12 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes — defer MFA check to avoid Supabase auth lock deadlock
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      (_event, session) => {
         setUser(session?.user ?? null);
         if (session?.user) {
-          await checkMfaStatus();
+          setTimeout(checkMfaStatus, 0);
         } else {
           setMfaRequired(false);
           setMfaFactorId(null);

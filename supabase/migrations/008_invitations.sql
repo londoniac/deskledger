@@ -40,18 +40,16 @@ CREATE POLICY "Accountants update received invitations"
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
-  acct_type TEXT;
   user_role TEXT;
 BEGIN
-  acct_type := NEW.raw_user_meta_data->>'account_type';
-  IF acct_type = 'accountant' THEN
+  IF NEW.raw_user_meta_data->>'account_type' = 'accountant' THEN
     user_role := 'accountant';
   ELSE
     user_role := 'user';
   END IF;
 
-  INSERT INTO user_profiles (id, email, role, trial_ends_at)
+  INSERT INTO public.user_profiles (id, email, role, trial_ends_at)
   VALUES (NEW.id, NEW.email, user_role, now() + interval '14 days');
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
