@@ -76,17 +76,46 @@ export default function Reports() {
       {reportView === "summary" && <YearSummary transactions={transactions} paypalTxns={paypalTxns} personalExpenses={personalExpenses} profile={profile} dividends={dividends} dlaData={dlaData} fixedAssets={fixedAssets} />}
 
       {/* Export & Downloads */}
-      <Card style={{ marginTop: 24 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Export & Downloads</h3>
-        <p style={{ fontSize: 13, color: PALETTE.textDim, marginBottom: 16 }}>
-          Download your data for your accountant or personal records.
-        </p>
-        <div style={{ display: "flex", gap: 12 }}>
-          <Button variant="outline" onClick={() => api.export.download("/api/export/accountant-pack", "accountant-pack.zip").catch((e) => alert("Download failed: " + e.message))}>Download Accountant Pack (.zip)</Button>
-          <Button variant="outline" onClick={() => api.export.download("/api/export/transactions.csv", "transactions.csv").catch((e) => alert("Download failed: " + e.message))}>Export Transactions (.csv)</Button>
-        </div>
-      </Card>
+      <ExportDownloads profile={profile} />
     </div>
+  );
+}
+
+function ExportDownloads({ profile }) {
+  const [packLoading, setPackLoading] = useState(false);
+  const [csvLoading, setCsvLoading] = useState(false);
+
+  const handleDownload = async (path, fileName, setLoading) => {
+    setLoading(true);
+    try {
+      await api.export.download(path, fileName);
+    } catch (e) {
+      alert("Download failed: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const packFileName = () => {
+    const companySlug = (profile?.company_name || "company").replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/, "").toLowerCase();
+    const date = new Date().toISOString().split("T")[0];
+    return `${companySlug}-accountant-pack-${date}.zip`;
+  };
+
+  return (
+    <Card style={{ marginTop: 24 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Export & Downloads</h3>
+      <p style={{ fontSize: 13, color: PALETTE.textDim, marginBottom: 16 }}>
+        Download your data for your accountant or personal records.
+      </p>
+      <div style={{ display: "flex", gap: 12 }}>
+        <Button variant="outline" disabled={packLoading} onClick={() => handleDownload("/api/export/accountant-pack", packFileName(), setPackLoading)}>
+          {packLoading ? "Preparing..." : "Download Accountant Pack (.zip)"}
+        </Button>
+        <Button variant="outline" disabled={csvLoading} onClick={() => handleDownload("/api/export/transactions.csv", "transactions.csv", setCsvLoading)}>
+          {csvLoading ? "Exporting..." : "Export Transactions (.csv)"}
+        </Button>
+      </div>
+    </Card>
   );
 }
 

@@ -41,6 +41,19 @@ router.post("/parse", async (req, res, next) => {
     // Extract closing balance from CSV (e.g. Monzo Balance column)
     const closingBalance = extractClosingBalance(rows);
 
+    // Save original CSV to storage for accountant pack (saved at parse time so it's stored even if all are duplicates)
+    const { fileName } = req.body;
+    if (csv) {
+      const safeName = (fileName || "bank-statement.csv").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${req.userId}/statements/${safeName}`;
+      await req.supabase.storage
+        .from("documents")
+        .upload(storagePath, Buffer.from(csv, "utf-8"), {
+          contentType: "text/csv",
+          upsert: true,
+        });
+    }
+
     res.json({
       total: preview.length,
       newCount: preview.filter((t) => !t.isDuplicate).length,
@@ -97,20 +110,6 @@ router.post("/confirm", async (req, res, next) => {
           updated_at: new Date().toISOString(),
         })
         .eq("id", req.userId);
-    }
-
-    // Save original CSV to storage for accountant pack
-    const { csv: originalCsv, fileName } = req.body;
-    if (originalCsv) {
-      const dateStr = new Date().toISOString().split("T")[0];
-      const safeName = (fileName || `bank-statement-${dateStr}.csv`).replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${req.userId}/statements/${dateStr}-${safeName}`;
-      await req.supabase.storage
-        .from("documents")
-        .upload(storagePath, Buffer.from(originalCsv, "utf-8"), {
-          contentType: "text/csv",
-          upsert: true,
-        });
     }
 
     res.json({ success: true, imported: (data || []).length });

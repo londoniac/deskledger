@@ -35,7 +35,7 @@ export default function Import() {
     setParsing(true);
     setMessage({ type: "", text: "" });
     try {
-      const result = await api.import.parse(csvText, file?.name?.toLowerCase().includes("paypal") ? "paypal" : "bank");
+      const result = await api.import.parse(csvText, file?.name?.toLowerCase().includes("paypal") ? "paypal" : "bank", file?.name);
       setPreview(result);
     } catch (e) {
       setMessage({ type: "error", text: e.message });
