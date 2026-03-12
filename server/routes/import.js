@@ -45,7 +45,8 @@ router.post("/parse", async (req, res, next) => {
     const { fileName } = req.body;
     if (csv) {
       const safeName = (fileName || "bank-statement.csv").replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${req.userId}/statements/${safeName}`;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const storagePath = `${req.userId}/statements/${timestamp}_${safeName}`;
       await req.supabase.storage
         .from("documents")
         .upload(storagePath, Buffer.from(csv, "utf-8"), {
