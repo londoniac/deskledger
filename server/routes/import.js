@@ -99,6 +99,20 @@ router.post("/confirm", async (req, res, next) => {
         .eq("id", req.userId);
     }
 
+    // Save original CSV to storage for accountant pack
+    const { csv: originalCsv, fileName } = req.body;
+    if (originalCsv) {
+      const dateStr = new Date().toISOString().split("T")[0];
+      const safeName = (fileName || `bank-statement-${dateStr}.csv`).replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${req.userId}/statements/${dateStr}-${safeName}`;
+      await req.supabase.storage
+        .from("documents")
+        .upload(storagePath, Buffer.from(originalCsv, "utf-8"), {
+          contentType: "text/csv",
+          upsert: true,
+        });
+    }
+
     res.json({ success: true, imported: (data || []).length });
   } catch (err) {
     next(err);

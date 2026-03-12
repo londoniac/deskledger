@@ -19,6 +19,8 @@ function calcCorpTax(profit) {
 
 export default function Reports() {
   const [transactions, setTransactions] = useState([]);
+  const [paypalTxns, setPaypalTxns] = useState([]);
+  const [personalExpenses, setPersonalExpenses] = useState([]);
   const [profile, setProfile] = useState(null);
   const [dividends, setDividends] = useState([]);
   const [dlaData, setDlaData] = useState(null);
@@ -34,13 +36,17 @@ export default function Reports() {
       api.dividends.getAll(),
       api.dla.getAll(),
       api.fixedAssets.getAll(),
+      api.paypal.getTransactions(),
+      api.expenses.getAll(),
     ])
-      .then(([txns, prof, divs, dla, assets]) => {
+      .then(([txns, prof, divs, dla, assets, pp, pe]) => {
         setTransactions(txns);
         setProfile(prof);
         setDividends(divs);
         setDlaData(dla);
         setFixedAssets(assets);
+        setPaypalTxns(pp || []);
+        setPersonalExpenses(pe || []);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -65,9 +71,9 @@ export default function Reports() {
 
       <ErrorMsg message={error} />
 
-      {reportView === "pl" && <ProfitAndLoss transactions={transactions} profile={profile} fixedAssets={fixedAssets} />}
-      {reportView === "tax" && <TaxComputation transactions={transactions} profile={profile} dividends={dividends} dlaData={dlaData} fixedAssets={fixedAssets} />}
-      {reportView === "summary" && <YearSummary transactions={transactions} profile={profile} dividends={dividends} dlaData={dlaData} fixedAssets={fixedAssets} />}
+      {reportView === "pl" && <ProfitAndLoss transactions={transactions} paypalTxns={paypalTxns} personalExpenses={personalExpenses} profile={profile} fixedAssets={fixedAssets} />}
+      {reportView === "tax" && <TaxComputation transactions={transactions} paypalTxns={paypalTxns} personalExpenses={personalExpenses} profile={profile} dividends={dividends} dlaData={dlaData} fixedAssets={fixedAssets} />}
+      {reportView === "summary" && <YearSummary transactions={transactions} paypalTxns={paypalTxns} personalExpenses={personalExpenses} profile={profile} dividends={dividends} dlaData={dlaData} fixedAssets={fixedAssets} />}
 
       {/* Export & Downloads */}
       <Card style={{ marginTop: 24 }}>
@@ -84,7 +90,7 @@ export default function Reports() {
   );
 }
 
-function ProfitAndLoss({ transactions, profile, fixedAssets }) {
+function ProfitAndLoss({ transactions, paypalTxns, personalExpenses, profile, fixedAssets }) {
   const active = transactions.filter((t) => !t.excluded);
   const EXCLUDE_INCOME = ["transfer", "capital"];
 
@@ -114,6 +120,16 @@ function ProfitAndLoss({ transactions, profile, fixedAssets }) {
       .reduce((s, t) => s + Number(t.amount), 0);
     if (total > 0) expenseByCategory[c.id] = { label: c.label, hmrc: c.hmrc, total: r2(total) };
   });
+
+  // PayPal expenses
+  const ppAuthorPayouts = r2(paypalTxns.filter((t) => t.type === "author_payout").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  const ppFees = r2(paypalTxns.filter((t) => t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  if (ppAuthorPayouts > 0) expenseByCategory["paypal_payouts"] = { label: "PayPal Author Payouts", hmrc: "Cost of goods sold", total: ppAuthorPayouts };
+  if (ppFees > 0) expenseByCategory["paypal_fees"] = { label: "PayPal Fees", hmrc: "Interest and bank charges", total: ppFees };
+
+  // Personal expenses
+  const peTotal = r2(personalExpenses.reduce((s, e) => s + Number(e.amount || 0), 0));
+  if (peTotal > 0) expenseByCategory["personal_expenses"] = { label: "Personal Expense Claims", hmrc: "Various (see breakdown)", total: peTotal };
 
   // Add depreciation from fixed assets
   const totalDepreciation = r2(fixedAssets.reduce((s, a) => s + Number(a.total_depreciation || 0), 0));
@@ -189,7 +205,7 @@ function ProfitAndLoss({ transactions, profile, fixedAssets }) {
   );
 }
 
-function TaxComputation({ transactions, profile, dividends, dlaData, fixedAssets }) {
+function TaxComputation({ transactions, paypalTxns, personalExpenses, profile, dividends, dlaData, fixedAssets }) {
   const active = transactions.filter((t) => !t.excluded);
   const EXCLUDE_INCOME = ["transfer", "capital"];
 
@@ -197,9 +213,15 @@ function TaxComputation({ transactions, profile, dividends, dlaData, fixedAssets
     .filter((t) => t.type === "income" && !EXCLUDE_INCOME.includes(t.category))
     .reduce((s, t) => s + Number(t.amount), 0));
 
-  const totalExpenses = r2(active
+  const bankExpenses = r2(active
     .filter((t) => t.type === "expense" && t.category !== "transfer")
     .reduce((s, t) => s + Number(t.amount), 0));
+
+  const ppAuthorPayouts = r2(paypalTxns.filter((t) => t.type === "author_payout").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  const ppFees = r2(paypalTxns.filter((t) => t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  const peTotal = r2(personalExpenses.reduce((s, e) => s + Number(e.amount || 0), 0));
+
+  const totalExpenses = r2(bankExpenses + ppAuthorPayouts + ppFees + peTotal);
 
   const depreciation = r2(fixedAssets.reduce((s, a) => s + Number(a.total_depreciation || 0), 0));
 
@@ -231,8 +253,12 @@ function TaxComputation({ transactions, profile, dividends, dlaData, fixedAssets
 
       <PLSection title="TRADING PROFIT">
         <PLRow label="Turnover (Box 145)" value={tradingIncome} />
-        <PLRow label="Less: Allowable expenses" value={totalExpenses} indent />
+        <PLRow label="Less: Bank expenses" value={bankExpenses} indent />
+        {ppAuthorPayouts > 0 && <PLRow label="Less: PayPal author payouts" value={ppAuthorPayouts} indent />}
+        {ppFees > 0 && <PLRow label="Less: PayPal fees" value={ppFees} indent />}
+        {peTotal > 0 && <PLRow label="Less: Personal expense claims" value={peTotal} indent />}
         {depreciation > 0 && <PLRow label="Less: Capital allowances" value={depreciation} indent />}
+        <PLRow label="Total Allowable Expenses" value={totalExpenses} indent bold />
         <PLRow label="Trading Profit (Box 155)" value={tradingProfit} bold color={tradingProfit >= 0 ? PALETTE.income : PALETTE.danger} />
       </PLSection>
 
@@ -263,12 +289,15 @@ function TaxComputation({ transactions, profile, dividends, dlaData, fixedAssets
   );
 }
 
-function YearSummary({ transactions, profile, dividends, dlaData, fixedAssets }) {
+function YearSummary({ transactions, paypalTxns, personalExpenses, profile, dividends, dlaData, fixedAssets }) {
   const active = transactions.filter((t) => !t.excluded);
   const EXCLUDE_INCOME = ["transfer", "capital"];
 
   const tradingIncome = r2(active.filter((t) => t.type === "income" && !EXCLUDE_INCOME.includes(t.category)).reduce((s, t) => s + Number(t.amount), 0));
-  const totalExpenses = r2(active.filter((t) => t.type === "expense" && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0));
+  const bankExpenses = r2(active.filter((t) => t.type === "expense" && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0));
+  const ppExpenses = r2(paypalTxns.filter((t) => t.type === "author_payout" || t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  const peTotal = r2(personalExpenses.reduce((s, e) => s + Number(e.amount || 0), 0));
+  const totalExpenses = r2(bankExpenses + ppExpenses + peTotal);
   const netProfit = r2(tradingIncome - totalExpenses);
   const { tax, effectiveRate } = calcCorpTax(netProfit);
   const totalDividends = dividends.reduce((s, d) => s + Number(d.amount), 0);

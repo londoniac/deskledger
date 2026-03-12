@@ -30,7 +30,7 @@ router.get("/accountant-pack", async (req, res, next) => {
     const fixedAssets = faRes.data || [];
 
     const active = transactions.filter((t) => !t.excluded);
-    const income = active.filter((t) => t.type === "income" && t.category !== "transfer");
+    const income = active.filter((t) => t.type === "income" && t.category !== "transfer" && t.category !== "capital");
     const expenses = active.filter((t) => t.type === "expense" && t.category !== "transfer" && t.type !== "reimbursement");
     const totalIncome = income.reduce((s, t) => s + Number(t.amount), 0);
     const totalBankExpenses = expenses.reduce((s, t) => s + Number(t.amount), 0);
@@ -79,6 +79,7 @@ router.get("/accountant-pack", async (req, res, next) => {
       `  monthly/YYYY-MM/           — Transactions & expenses by month`,
       `  monthly/YYYY-MM/invoices/  — Invoice/receipt files for that month`,
       `  monthly/YYYY-MM/receipts/  — Personal expense receipts for that month`,
+      `  bank-statements/           — Original CSV files from Monzo/bank`,
       `  summaries/                 — Full CSVs, tax summary, P&L data`,
       `  summaries/excluded.csv     — Excluded transactions (with reasons)`,
       `  summaries/reimbursements.csv — Director reimbursement payments`,
@@ -190,6 +191,26 @@ router.get("/accountant-pack", async (req, res, next) => {
         zip.file(`monthly/${mk}/receipts/${fileName}`, buf);
       } catch (e) { /* skip failed downloads */ }
     }
+
+    // ─── ORIGINAL BANK STATEMENTS ───
+    try {
+      const { data: stmtFiles } = await req.supabase.storage
+        .from("documents")
+        .list(`${req.userId}/statements`, { limit: 100, sortBy: { column: "name", order: "asc" } });
+      if (stmtFiles && stmtFiles.length > 0) {
+        for (const sf of stmtFiles) {
+          try {
+            const { data: fileData } = await req.supabase.storage
+              .from("documents")
+              .download(`${req.userId}/statements/${sf.name}`);
+            if (fileData) {
+              const buf = Buffer.from(await fileData.arrayBuffer());
+              zip.file(`bank-statements/${sf.name}`, buf);
+            }
+          } catch (e) { /* skip */ }
+        }
+      }
+    } catch (e) { /* skip if no statements */ }
 
     // ─── SUMMARIES FOLDER ───
     // Full transactions CSV

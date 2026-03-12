@@ -49,7 +49,7 @@ export default function Import() {
     setMessage({ type: "", text: "" });
     try {
       const newTxns = preview.transactions.filter((t) => !t.isDuplicate);
-      const result = await api.import.confirm(newTxns, preview.closingBalance);
+      const result = await api.import.confirm(newTxns, preview.closingBalance, csvText, file?.name);
       const balMsg = preview.closingBalance ? ` Bank balance updated to ${fmt(preview.closingBalance.balance)}.` : "";
       setMessage({ type: "success", text: `Imported ${result.imported} transactions successfully.${balMsg}` });
       setPreview(null);
