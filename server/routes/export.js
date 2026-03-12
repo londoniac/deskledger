@@ -43,8 +43,24 @@ router.get("/accountant-pack", async (req, res, next) => {
     const corpTax = Math.max(0, profit * (taxRate / 100));
     const companyName = profile.company_name || "Company";
 
+    const excluded = transactions.filter((t) => t.excluded);
+    const reimbursements = transactions.filter((t) => t.type === "reimbursement");
+
     const zip = new JSZip();
     const dateStr = new Date().toISOString().split("T")[0];
+
+    // Helper: get month folder key from date
+    const monthKey = (d) => {
+      const dt = new Date(d);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+    };
+    const monthLabel = (key) => {
+      const [y, m] = key.split("-");
+      return new Date(Number(y), Number(m) - 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    };
+
+    // Helper: CSV escape
+    const esc = (s) => `"${(s || "").replace(/"/g, '""')}"`;
 
     // README
     zip.file("README.txt", [
@@ -58,55 +74,172 @@ router.get("/accountant-pack", async (req, res, next) => {
       `Corp Tax Est:       ${fmt(corpTax)} @ ${taxRate}%`,
       ``,
       `Records: ${transactions.length} transactions, ${paypalTransactions.length} PayPal, ${invoices.length} invoices, ${personalExpenses.length} personal expenses`,
+      ``,
+      `FOLDER STRUCTURE:`,
+      `  monthly/YYYY-MM/           — Transactions & expenses by month`,
+      `  monthly/YYYY-MM/invoices/  — Invoice/receipt files for that month`,
+      `  monthly/YYYY-MM/receipts/  — Personal expense receipts for that month`,
+      `  summaries/                 — Full CSVs, tax summary, P&L data`,
+      `  summaries/excluded.csv     — Excluded transactions (with reasons)`,
+      `  summaries/reimbursements.csv — Director reimbursement payments`,
     ].join("\n"));
 
-    // Transactions CSV
-    const txnHeaders = ["Date", "Description", "Source", "Type", "Amount (GBP)", "Category", "HMRC Category", "Excluded", "Has Invoice", "Notes"];
+    // ─── MONTHLY FOLDERS ───
+    // Group transactions by month
+    const txnsByMonth = {};
+    transactions.forEach((t) => {
+      const mk = monthKey(t.date);
+      if (!txnsByMonth[mk]) txnsByMonth[mk] = [];
+      txnsByMonth[mk].push(t);
+    });
+
+    // Group personal expenses by month
+    const peByMonth = {};
+    personalExpenses.forEach((e) => {
+      const mk = monthKey(e.date);
+      if (!peByMonth[mk]) peByMonth[mk] = [];
+      peByMonth[mk].push(e);
+    });
+
+    // Group PayPal by month
+    const ppByMonth = {};
+    paypalTransactions.forEach((t) => {
+      const mk = monthKey(t.date);
+      if (!ppByMonth[mk]) ppByMonth[mk] = [];
+      ppByMonth[mk].push(t);
+    });
+
+    // All months across all data
+    const allMonths = [...new Set([...Object.keys(txnsByMonth), ...Object.keys(peByMonth), ...Object.keys(ppByMonth)])].sort();
+
+    for (const mk of allMonths) {
+      const folder = `monthly/${mk}`;
+      const mTxns = txnsByMonth[mk] || [];
+      const mPE = peByMonth[mk] || [];
+      const mPP = ppByMonth[mk] || [];
+
+      // Monthly transactions CSV
+      const txnHeaders = ["Date", "Description", "Source", "Type", "Amount (GBP)", "Category", "HMRC Category", "Excluded", "Exclude Reason", "Has Invoice", "Notes"];
+      const txnRows = mTxns.map((t) => {
+        const cat = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES].find((c) => c.id === t.category);
+        const hmrc = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
+        return [t.date, esc(t.description), t.source, t.type, Number(t.amount).toFixed(2), cat ? cat.label : "", hmrc ? hmrc.hmrc : "", t.excluded ? "Yes" : "No", esc(t.exclude_reason), t.invoice_id ? "Yes" : "No", esc(t.notes)];
+      });
+      zip.file(`${folder}/transactions.csv`, [txnHeaders.join(","), ...txnRows.map((r) => r.join(","))].join("\n"));
+
+      // Monthly personal expenses CSV
+      if (mPE.length > 0) {
+        const peHeaders = ["Date", "Description", "Amount (GBP)", "Original Amount", "Original Currency", "Category", "Supplier", "Status", "Has Receipt", "Notes"];
+        const peRows = mPE.map((e) => {
+          const cat = EXPENSE_CATEGORIES.find((c) => c.id === e.category);
+          return [e.date, esc(e.description), Number(e.amount).toFixed(2), e.original_amount ? Number(e.original_amount).toFixed(2) : "", e.original_currency || "", cat ? cat.label : "", esc(e.supplier), e.status, e.receipt_path ? "Yes" : "No", esc(e.notes)];
+        });
+        zip.file(`${folder}/personal-expenses.csv`, [peHeaders.join(","), ...peRows.map((r) => r.join(","))].join("\n"));
+      }
+
+      // Monthly PayPal CSV
+      if (mPP.length > 0) {
+        const ppHeaders = ["Date", "Description", "Type", "Currency", "Amount", "GBP Amount", "Fee", "Event Code", "PayPal ID"];
+        const ppRows = mPP.map((t) => [t.date, esc(t.description), t.type, t.currency, Number(t.amount).toFixed(2), Number(t.gbp_amount || 0).toFixed(2), Number(t.fee_amount || 0).toFixed(2), t.event_code || "", t.paypal_id || ""]);
+        zip.file(`${folder}/paypal.csv`, [ppHeaders.join(","), ...ppRows.map((r) => r.join(","))].join("\n"));
+      }
+
+      // Monthly summary text
+      const mActive = mTxns.filter((t) => !t.excluded);
+      const mIncome = r2(mActive.filter((t) => t.type === "income" && t.category !== "transfer" && t.category !== "capital").reduce((s, t) => s + Number(t.amount), 0));
+      const mExp = r2(mActive.filter((t) => t.type === "expense" && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0));
+      const mPPExp = r2(mPP.filter((t) => t.type === "author_payout" || t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+      const mPETotal = r2(mPE.reduce((s, e) => s + Number(e.amount), 0));
+      zip.file(`${folder}/summary.txt`, [
+        `${monthLabel(mk)}`,
+        `${"─".repeat(40)}`,
+        `Trading Income:      ${fmt(mIncome)}`,
+        `Bank Expenses:       ${fmt(mExp)}`,
+        `PayPal Expenses:     ${fmt(mPPExp)}`,
+        `Personal Expenses:   ${fmt(mPETotal)}`,
+        `Net:                 ${fmt(r2(mIncome - mExp - mPPExp - mPETotal))}`,
+        ``,
+        `Transactions: ${mTxns.length} (${mTxns.filter((t) => t.excluded).length} excluded)`,
+      ].join("\n"));
+    }
+
+    // ─── DOWNLOAD INVOICE/RECEIPT FILES INTO MONTHLY FOLDERS ───
+    // Invoices (linked to transactions)
+    for (const inv of invoices) {
+      if (!inv.file_path) continue;
+      try {
+        const { data, error } = await req.supabase.storage.from("documents").download(inv.file_path);
+        if (error || !data) continue;
+        const buf = Buffer.from(await data.arrayBuffer());
+        const txn = transactions.find((t) => t.id === inv.transaction_id);
+        const mk = txn ? monthKey(txn.date) : monthKey(inv.created_at || inv.upload_date);
+        const fileName = inv.file_name || inv.file_path.split("/").pop();
+        zip.file(`monthly/${mk}/invoices/${fileName}`, buf);
+      } catch (e) { /* skip failed downloads */ }
+    }
+
+    // Personal expense receipts
+    for (const pe of personalExpenses) {
+      if (!pe.receipt_path) continue;
+      try {
+        const { data, error } = await req.supabase.storage.from("documents").download(pe.receipt_path);
+        if (error || !data) continue;
+        const buf = Buffer.from(await data.arrayBuffer());
+        const mk = monthKey(pe.date);
+        const fileName = pe.receipt_name || pe.receipt_path.split("/").pop();
+        zip.file(`monthly/${mk}/receipts/${fileName}`, buf);
+      } catch (e) { /* skip failed downloads */ }
+    }
+
+    // ─── SUMMARIES FOLDER ───
+    // Full transactions CSV
+    const txnHeaders = ["Date", "Description", "Source", "Type", "Amount (GBP)", "Category", "HMRC Category", "Excluded", "Exclude Reason", "Has Invoice", "Notes"];
     const txnRows = transactions.map((t) => {
       const cat = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES].find((c) => c.id === t.category);
       const hmrc = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
-      return [t.date, `"${(t.description || "").replace(/"/g, '""')}"`, t.source, t.type, Number(t.amount).toFixed(2), cat ? cat.label : "", hmrc ? hmrc.hmrc : "", t.excluded ? "Yes" : "No", t.invoice_id ? "Yes" : "No", `"${(t.notes || "").replace(/"/g, '""')}"`];
+      return [t.date, esc(t.description), t.source, t.type, Number(t.amount).toFixed(2), cat ? cat.label : "", hmrc ? hmrc.hmrc : "", t.excluded ? "Yes" : "No", esc(t.exclude_reason), t.invoice_id ? "Yes" : "No", esc(t.notes)];
     });
-    zip.file("transactions.csv", [txnHeaders.join(","), ...txnRows.map((r) => r.join(","))].join("\n"));
+    zip.file("summaries/all-transactions.csv", [txnHeaders.join(","), ...txnRows.map((r) => r.join(","))].join("\n"));
 
-    // Income CSV
-    const incHeaders = ["Date", "Description", "Source", "Amount (GBP)", "Category", "Notes"];
-    const incRows = income.map((t) => {
-      const cat = INCOME_CATEGORIES.find((c) => c.id === t.category);
-      return [t.date, `"${(t.description || "").replace(/"/g, '""')}"`, t.source, Number(t.amount).toFixed(2), cat ? cat.label : "", `"${(t.notes || "").replace(/"/g, '""')}"`];
-    });
-    zip.file("income.csv", [incHeaders.join(","), ...incRows.map((r) => r.join(","))].join("\n"));
-
-    // Expenses CSV
-    const expHeaders = ["Date", "Description", "Source", "Amount (GBP)", "Category", "HMRC Category", "Has Invoice", "Notes"];
-    const expRows = expenses.map((t) => {
-      const cat = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
-      return [t.date, `"${(t.description || "").replace(/"/g, '""')}"`, t.source, Number(t.amount).toFixed(2), cat ? cat.label : "", cat ? cat.hmrc : "", t.invoice_id ? "Yes" : "No", `"${(t.notes || "").replace(/"/g, '""')}"`];
-    });
-    zip.file("expenses.csv", [expHeaders.join(","), ...expRows.map((r) => r.join(","))].join("\n"));
-
-    // PayPal CSV
-    if (paypalTransactions.length > 0) {
-      const ppHeaders = ["Date", "Description", "Type", "Currency", "Amount", "GBP Amount", "Fee", "Event Code", "PayPal ID"];
-      const ppRows = paypalTransactions.map((t) => [t.date, `"${(t.description || "").replace(/"/g, '""')}"`, t.type, t.currency, Number(t.amount).toFixed(2), Number(t.gbp_amount || 0).toFixed(2), Number(t.fee_amount || 0).toFixed(2), t.event_code || "", t.paypal_id || ""]);
-      zip.file("paypal-transactions.csv", [ppHeaders.join(","), ...ppRows.map((r) => r.join(","))].join("\n"));
+    // Excluded transactions CSV
+    if (excluded.length > 0) {
+      const exHeaders = ["Date", "Description", "Source", "Type", "Amount (GBP)", "Category", "Exclude Reason", "Notes"];
+      const exRows = excluded.map((t) => {
+        const cat = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES].find((c) => c.id === t.category);
+        return [t.date, esc(t.description), t.source, t.type, Number(t.amount).toFixed(2), cat ? cat.label : "", esc(t.exclude_reason), esc(t.notes)];
+      });
+      zip.file("summaries/excluded.csv", [exHeaders.join(","), ...exRows.map((r) => r.join(","))].join("\n"));
     }
 
-    // Personal expenses CSV
+    // Reimbursements CSV
+    if (reimbursements.length > 0) {
+      const reHeaders = ["Date", "Description", "Amount (GBP)", "Notes"];
+      const reRows = reimbursements.map((t) => [t.date, esc(t.description), Number(t.amount).toFixed(2), esc(t.notes)]);
+      zip.file("summaries/reimbursements.csv", [reHeaders.join(","), ...reRows.map((r) => r.join(","))].join("\n"));
+    }
+
+    // PayPal CSV (full)
+    if (paypalTransactions.length > 0) {
+      const ppHeaders = ["Date", "Description", "Type", "Currency", "Amount", "GBP Amount", "Fee", "Event Code", "PayPal ID"];
+      const ppRows = paypalTransactions.map((t) => [t.date, esc(t.description), t.type, t.currency, Number(t.amount).toFixed(2), Number(t.gbp_amount || 0).toFixed(2), Number(t.fee_amount || 0).toFixed(2), t.event_code || "", t.paypal_id || ""]);
+      zip.file("summaries/paypal-transactions.csv", [ppHeaders.join(","), ...ppRows.map((r) => r.join(","))].join("\n"));
+    }
+
+    // Personal expenses CSV (full)
     if (personalExpenses.length > 0) {
-      const peHeaders = ["Date", "Description", "Amount (GBP)", "Category", "Supplier", "Status", "Has Receipt", "Notes"];
+      const peHeaders = ["Date", "Description", "Amount (GBP)", "Original Amount", "Original Currency", "Category", "Supplier", "Status", "Has Receipt", "Notes"];
       const peRows = personalExpenses.map((e) => {
         const cat = EXPENSE_CATEGORIES.find((c) => c.id === e.category);
-        return [e.date, `"${(e.description || "").replace(/"/g, '""')}"`, Number(e.amount).toFixed(2), cat ? cat.label : "", `"${(e.supplier || "").replace(/"/g, '""')}"`, e.status, e.receipt_path ? "Yes" : "No", `"${(e.notes || "").replace(/"/g, '""')}"`];
+        return [e.date, esc(e.description), Number(e.amount).toFixed(2), e.original_amount ? Number(e.original_amount).toFixed(2) : "", e.original_currency || "", cat ? cat.label : "", esc(e.supplier), e.status, e.receipt_path ? "Yes" : "No", esc(e.notes)];
       });
-      zip.file("personal-expenses.csv", [peHeaders.join(","), ...peRows.map((r) => r.join(","))].join("\n"));
+      zip.file("summaries/personal-expenses.csv", [peHeaders.join(","), ...peRows.map((r) => r.join(","))].join("\n"));
     }
 
     // Dividends CSV
     if (dividends.length > 0) {
       const divHeaders = ["Date", "Shareholder", "Gross Amount (GBP)", "Tax Year", "Voucher No", "Notes"];
-      const divRows = dividends.map((d) => [d.date, `"${d.shareholder}"`, Number(d.amount).toFixed(2), d.tax_year, d.voucher_no || "", `"${(d.notes || "").replace(/"/g, '""')}"`]);
-      zip.file("dividends.csv", [divHeaders.join(","), ...divRows.map((r) => r.join(","))].join("\n"));
+      const divRows = dividends.map((d) => [d.date, esc(d.shareholder), Number(d.amount).toFixed(2), d.tax_year, d.voucher_no || "", esc(d.notes)]);
+      zip.file("summaries/dividends.csv", [divHeaders.join(","), ...divRows.map((r) => r.join(","))].join("\n"));
     }
 
     // Directors' Loan Account CSV
@@ -116,19 +249,19 @@ router.get("/accountant-pack", async (req, res, next) => {
       const dlaRows = dlaEntries.map((e) => {
         if (e.direction === "to_director") balance += Number(e.amount);
         else balance -= Number(e.amount);
-        return [e.date, `"${(e.description || "").replace(/"/g, '""')}"`, e.direction, Number(e.amount).toFixed(2), r2(balance).toFixed(2), e.category || "", `"${(e.notes || "").replace(/"/g, '""')}"`];
+        return [e.date, esc(e.description), e.direction, Number(e.amount).toFixed(2), r2(balance).toFixed(2), e.category || "", esc(e.notes)];
       });
-      zip.file("directors-loan-account.csv", [dlaHeaders.join(","), ...dlaRows.map((r) => r.join(","))].join("\n"));
+      zip.file("summaries/directors-loan-account.csv", [dlaHeaders.join(","), ...dlaRows.map((r) => r.join(","))].join("\n"));
     }
 
     // Fixed Assets CSV
     if (fixedAssets.length > 0) {
       const faHeaders = ["Name", "Category", "Date Acquired", "Cost (GBP)", "Depreciation Method", "Useful Life (Years)", "Notes"];
       const faRows = fixedAssets.map((a) => [
-        `"${a.name}"`, a.category, a.date_acquired, Number(a.cost).toFixed(2),
-        a.depreciation_method, a.useful_life_years, `"${(a.notes || "").replace(/"/g, '""')}"`
+        esc(a.name), a.category, a.date_acquired, Number(a.cost).toFixed(2),
+        a.depreciation_method, a.useful_life_years, esc(a.notes),
       ]);
-      zip.file("fixed-assets.csv", [faHeaders.join(","), ...faRows.map((r) => r.join(","))].join("\n"));
+      zip.file("summaries/fixed-assets.csv", [faHeaders.join(","), ...faRows.map((r) => r.join(","))].join("\n"));
     }
 
     // DLA summary
@@ -215,7 +348,7 @@ router.get("/accountant-pack", async (req, res, next) => {
       `  before filing. This does not constitute tax advice.`,
       `═══════════════════════════════════════════════════════`,
     ];
-    zip.file("tax-summary.txt", taxLines.join("\n"));
+    zip.file("summaries/tax-summary.txt", taxLines.join("\n"));
 
     // Generate and send
     const blob = await zip.generateAsync({ type: "nodebuffer" });
