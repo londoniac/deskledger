@@ -49,6 +49,8 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
     tax_rate: "19",
     vat_registered: false,
     vat_number: "",
+    associated_companies: "0",
+    brought_forward_losses: "0",
   });
 
   useEffect(() => {
@@ -65,6 +67,8 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
           tax_rate: String(p.tax_rate || 19),
           vat_registered: p.vat_registered || false,
           vat_number: p.vat_number || "",
+          associated_companies: String(p.associated_companies || 0),
+          brought_forward_losses: String(p.brought_forward_losses || 0),
         });
       })
       .catch((e) => setMessage({ type: "error", text: e.message }))
@@ -84,6 +88,8 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
         tax_rate: Number(form.tax_rate) || 19,
         year_start: form.year_start || null,
         year_end: form.year_end || null,
+        associated_companies: Number(form.associated_companies) || 0,
+        brought_forward_losses: Number(form.brought_forward_losses) || 0,
       };
       await api.profile.update(data);
       onProfileUpdate?.(data);
@@ -149,6 +155,16 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
               <div>
                 <Label>Corporation Tax Rate</Label>
                 <Select value={form.tax_rate} onChange={(v) => update("tax_rate", v)} options={TAX_RATES} style={{ width: "100%" }} />
+              </div>
+              <div>
+                <Label>Associated Companies</Label>
+                <Input type="number" value={form.associated_companies} onChange={(e) => update("associated_companies", e.target.value)} placeholder="0" />
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 4 }}>Affects marginal relief thresholds</div>
+              </div>
+              <div>
+                <Label>Brought Forward Losses (£)</Label>
+                <Input type="number" value={form.brought_forward_losses} onChange={(e) => update("brought_forward_losses", e.target.value)} placeholder="0" />
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 4 }}>Trading losses from prior years</div>
               </div>
             </>
           )}

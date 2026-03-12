@@ -41,6 +41,7 @@ router.put("/", validate(profileUpdateSchema), async (req, res, next) => {
       "vat_scheme", "vat_flat_rate", "vat_registration_date", "vat_quarter_start",
       "paypal_sandbox",
       "account_type",
+      "associated_companies", "brought_forward_losses",
     ];
     const updates = {};
     for (const key of allowed) {

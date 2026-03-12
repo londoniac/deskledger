@@ -229,4 +229,6 @@ export const profileUpdateSchema = z.object({
   vat_quarter_start: z.coerce.number().optional(),
   paypal_sandbox: z.boolean().optional(),
   account_type: z.string().optional(),
+  associated_companies: z.coerce.number().optional(),
+  brought_forward_losses: z.coerce.number().optional(),
 }).passthrough();
