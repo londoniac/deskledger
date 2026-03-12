@@ -469,7 +469,7 @@ export default function Transactions() {
               {!collapsed.has(group.key) && (
                 <div>
                   {/* Table header */}
-                  <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 80px 80px 100px 140px 50px", gap: 0, padding: "6px 10px", borderBottom: `1px solid ${PALETTE.border}` }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 80px 110px 100px 160px 50px", gap: 0, padding: "6px 10px", borderBottom: `1px solid ${PALETTE.border}` }}>
                     {["Date", "Description", "Source", "Type", "Amount", "Category", ""].map((h) => (
                       <div key={h} style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600 }}>{h}</div>
                     ))}
@@ -490,7 +490,7 @@ export default function Transactions() {
                           onClick={() => toggleExpand(t.id)}
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "100px 1fr 80px 80px 100px 140px 50px",
+                            gridTemplateColumns: "100px 1fr 80px 110px 100px 160px 50px",
                             gap: 0,
                             padding: "10px 10px",
                             cursor: "pointer",
