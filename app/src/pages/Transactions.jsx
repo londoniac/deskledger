@@ -196,11 +196,19 @@ export default function Transactions() {
   const quickSaveType = async (txnId, newType) => {
     try {
       const updates = { type: newType, updated_at: new Date().toISOString() };
-      // If changing to/from transfer, update category too
+      // If changing to transfer/reimbursement, update category and exclude from P&L
       if (newType === "transfer") updates.category = "transfer";
-      else {
+      else if (newType === "reimbursement") {
+        updates.category = "reimbursement";
+        updates.excluded = true;
+        updates.exclude_reason = "Director reimbursement";
+      } else {
         const txn = transactions.find((t) => t.id === txnId);
-        if (txn?.category === "transfer") updates.category = "";
+        if (txn?.category === "transfer" || txn?.category === "reimbursement") updates.category = "";
+        if (txn?.exclude_reason === "Director reimbursement") {
+          updates.excluded = false;
+          updates.exclude_reason = null;
+        }
       }
       const updated = await api.transactions.update(txnId, updates);
       setTransactions((prev) => prev.map((t) => (t.id === txnId ? { ...t, ...updated } : t)));
@@ -358,7 +366,7 @@ export default function Transactions() {
           />
           <Select
             value={typeFilter} onChange={setTypeFilter}
-            options={[{ value: "all", label: "All Types" }, { value: "income", label: "Income" }, { value: "expense", label: "Expenses" }, { value: "transfer", label: "Transfers" }]}
+            options={[{ value: "all", label: "All Types" }, { value: "income", label: "Income" }, { value: "expense", label: "Expenses" }, { value: "transfer", label: "Transfers" }, { value: "reimbursement", label: "Reimbursements" }]}
           />
           <Select
             value={categoryFilter} onChange={setCategoryFilter}
@@ -436,7 +444,7 @@ export default function Transactions() {
       ) : (
         grouped.map((group) => {
           const monthIncome = r2(group.transactions.filter((t) => t.type === "income" && !t.excluded && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0));
-          const monthExpenses = r2(group.transactions.filter((t) => t.type === "expense" && !t.excluded && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0));
+          const monthExpenses = r2(group.transactions.filter((t) => t.type === "expense" && !t.excluded && t.category !== "transfer" && t.type !== "reimbursement").reduce((s, t) => s + Number(t.amount), 0));
           const monthLabel = new Date(group.key + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 
           return (
@@ -487,7 +495,7 @@ export default function Transactions() {
                             padding: "10px 10px",
                             cursor: "pointer",
                             opacity: t.excluded ? 0.4 : 1,
-                            borderLeft: `3px solid ${t.excluded ? "transparent" : t.category === "transfer" ? PALETTE.purple : !t.category ? PALETTE.orange : "transparent"}`,
+                            borderLeft: `3px solid ${t.excluded ? "transparent" : t.category === "transfer" ? PALETTE.purple : t.type === "reimbursement" ? PALETTE.cyan : !t.category ? PALETTE.orange : "transparent"}`,
                             background: isExpanded ? PALETTE.bg : "transparent",
                             transition: "background 0.15s",
                           }}
@@ -516,16 +524,17 @@ export default function Transactions() {
                               style={{
                                 background: "transparent", border: "none", cursor: "pointer",
                                 fontSize: 11, fontWeight: 600, textTransform: "uppercase",
-                                color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense,
+                                color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : t.type === "reimbursement" ? PALETTE.cyan : PALETTE.expense,
                                 outline: "none", padding: "2px 0",
                               }}
                             >
                               <option value="income">Income</option>
                               <option value="expense">Expense</option>
                               <option value="transfer">Transfer</option>
+                              <option value="reimbursement">Reimbursement</option>
                             </select>
                           </div>
-                          <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense }}>
+                          <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : t.type === "reimbursement" ? PALETTE.cyan : PALETTE.expense }}>
                             {fmt(t.amount)}
                           </div>
                           <div onClick={(e) => e.stopPropagation()}>
@@ -539,7 +548,7 @@ export default function Transactions() {
                               }}
                             >
                               <option value="">Uncategorised</option>
-                              {(t.type === "income" ? incomeCats : t.type === "transfer" ? [{ id: "transfer", label: "Transfer" }] : expenseCats).map((c) => (
+                              {(t.type === "income" ? incomeCats : t.type === "transfer" ? [{ id: "transfer", label: "Transfer" }] : t.type === "reimbursement" ? [{ id: "reimbursement", label: "Director Reimbursement" }] : expenseCats).map((c) => (
                                 <option key={c.id} value={c.id}>{c.label}</option>
                               ))}
                             </select>
@@ -566,8 +575,8 @@ export default function Transactions() {
                                   </div>
                                   <div>
                                     <div style={detailLabel}>Type</div>
-                                    <Select value={editData.type} onChange={(v) => setEditData({ ...editData, type: v, category: v === "transfer" ? "transfer" : "" })}
-                                      options={[{ value: "income", label: "Income" }, { value: "expense", label: "Expense" }, { value: "transfer", label: "Transfer" }]} style={{ width: "100%" }} />
+                                    <Select value={editData.type} onChange={(v) => setEditData({ ...editData, type: v, category: v === "transfer" ? "transfer" : v === "reimbursement" ? "reimbursement" : "" })}
+                                      options={[{ value: "income", label: "Income" }, { value: "expense", label: "Expense" }, { value: "transfer", label: "Transfer" }, { value: "reimbursement", label: "Reimbursement" }]} style={{ width: "100%" }} />
                                   </div>
                                   <div>
                                     <div style={detailLabel}>Amount (GBP) <span style={{ fontSize: 10, color: PALETTE.textMuted, fontWeight: 400 }}>(locked)</span></div>
@@ -580,7 +589,7 @@ export default function Transactions() {
                                     <Select
                                       value={editData.category}
                                       onChange={(v) => setEditData({ ...editData, category: v })}
-                                      options={[{ value: "", label: "Select..." }, ...(editData.type === "transfer" ? [{ id: "transfer", label: "Transfer" }] : editData.type === "income" ? incomeCats : expenseCats).map((c) => ({ value: c.id, label: c.label }))]}
+                                      options={[{ value: "", label: "Select..." }, ...(editData.type === "transfer" ? [{ id: "transfer", label: "Transfer" }] : editData.type === "reimbursement" ? [{ id: "reimbursement", label: "Director Reimbursement" }] : editData.type === "income" ? incomeCats : expenseCats).map((c) => ({ value: c.id, label: c.label }))]}
                                       style={{ width: "100%" }}
                                     />
                                   </div>
@@ -628,14 +637,14 @@ export default function Transactions() {
                                   </div>
                                   <div>
                                     <div style={detailLabel}>Amount</div>
-                                    <div style={{ ...detailValue, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense }}>
+                                    <div style={{ ...detailValue, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : t.type === "reimbursement" ? PALETTE.cyan : PALETTE.expense }}>
                                       {fmt(t.amount)}
                                     </div>
                                   </div>
                                   <div>
                                     <div style={detailLabel}>Type</div>
                                     <div style={detailValue}>
-                                      <Badge color={t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense}>{t.type}</Badge>
+                                      <Badge color={t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : t.type === "reimbursement" ? PALETTE.cyan : PALETTE.expense}>{t.type}</Badge>
                                     </div>
                                   </div>
                                 </div>

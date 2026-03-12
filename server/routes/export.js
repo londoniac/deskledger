@@ -31,7 +31,7 @@ router.get("/accountant-pack", async (req, res, next) => {
 
     const active = transactions.filter((t) => !t.excluded);
     const income = active.filter((t) => t.type === "income" && t.category !== "transfer");
-    const expenses = active.filter((t) => t.type === "expense" && t.category !== "transfer");
+    const expenses = active.filter((t) => t.type === "expense" && t.category !== "transfer" && t.type !== "reimbursement");
     const totalIncome = income.reduce((s, t) => s + Number(t.amount), 0);
     const totalBankExpenses = expenses.reduce((s, t) => s + Number(t.amount), 0);
     const ppAuthorPayouts = paypalTransactions.filter((t) => t.type === "author_payout").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0);

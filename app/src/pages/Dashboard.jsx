@@ -53,6 +53,8 @@ export default function Dashboard() {
     const income = active.filter((t) => t.type === "income" && !EXCLUDE_FROM_INCOME.includes(t.category));
     const capitalTxns = active.filter((t) => t.type === "income" && t.category === "capital");
     const expenses = active.filter((t) => t.type === "expense" && t.category !== "transfer");
+    const reimbursementTxns = transactions.filter((t) => t.type === "reimbursement");
+    const totalReimbursements = r2(reimbursementTxns.reduce((s, t) => s + Number(t.amount), 0));
 
     const totalIncome = r2(income.reduce((s, t) => s + Number(t.amount), 0));
     const totalCapital = r2(capitalTxns.reduce((s, t) => s + Number(t.amount), 0));
@@ -106,7 +108,7 @@ export default function Dashboard() {
       expenseCount: expenses.length + (isBusiness ? paypalTxns.filter((t) => t.type === "author_payout" || t.type === "fee").length : 0),
       companyExpenses, paypalExpenses, paypalIncome, ppTransfersIn, ppAuthorPayouts, ppFees,
       bankTransfersOut, totalCapital, totalPersonalExpenses, reimbursementsOwed,
-      bankIncome: totalIncome,
+      totalReimbursements, bankIncome: totalIncome,
     };
   }, [transactions, paypalTxns, personalExpenses, profile, isBusiness]);
 
@@ -319,7 +321,7 @@ function AccountReconciliation({ stats, profile }) {
   const paypalBalance = r2(stats.ppTransfersIn - stats.paypalExpenses);
 
   // Cash position
-  const bankBalance = actualBankBalance != null ? actualBankBalance : r2(seedMoney + stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut);
+  const bankBalance = actualBankBalance != null ? actualBankBalance : r2(seedMoney + stats.bankIncome - stats.companyExpenses - stats.bankTransfersOut - stats.totalReimbursements);
   const totalCash = r2(bankBalance + paypalBalance);
   const tradingGain = r2(totalCash - seedMoney);
   const afterReimbursements = r2(tradingGain + stats.reimbursementsOwed);
@@ -383,6 +385,7 @@ function AccountReconciliation({ stats, profile }) {
           )}
           <Row label="Total Cash" value={totalCash} bold />
           {seedMoney > 0 && <Row label="Less: Seed Capital" value={-seedMoney} color={PALETTE.blue} />}
+          {stats.totalReimbursements > 0 && <Row label="Less: Director Reimbursements" value={-stats.totalReimbursements} color={PALETTE.cyan} />}
           <Row label="Trading Gain / (Loss)" value={tradingGain} color={tradingGain >= 0 ? PALETTE.income : PALETTE.expense} bold sep />
           {stats.reimbursementsOwed > 0 && (
             <>
@@ -471,6 +474,13 @@ function AccountReconciliation({ stats, profile }) {
                 <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(stats.ppFees)}</div>
                 <div style={{ textAlign: "right", color: PALETTE.expense }}>{fmt(plPPFees)}</div>
                 {(() => { const d = r2(stats.ppFees - plPPFees); return <div style={{ textAlign: "right", color: Math.abs(d) > 0.01 ? PALETTE.danger : PALETTE.textMuted }}>{Math.abs(d) > 0.01 ? fmt(d) : "—"}</div>; })()}
+
+                {stats.totalReimbursements > 0 && (<>
+                <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Director Reimbursements</div>
+                <div style={{ textAlign: "right", color: PALETTE.cyan }}>{fmt(stats.totalReimbursements)}</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>excluded</div>
+                <div style={{ textAlign: "right", color: PALETTE.textMuted }}>—</div>
+                </>)}
 
                 <div style={{ color: PALETTE.textDim, fontFamily: "system-ui" }}>Personal Expenses</div>
                 <div style={{ textAlign: "right", color: PALETTE.textMuted }}>not in cash</div>
