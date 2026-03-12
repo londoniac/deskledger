@@ -205,6 +205,7 @@ const api = {
     getClientDLA: (clientId) => request(`/api/accountant/client/${clientId}/dla`),
     getClientVATReturns: (clientId) => request(`/api/accountant/client/${clientId}/vat-returns`),
     getClientFixedAssets: (clientId) => request(`/api/accountant/client/${clientId}/fixed-assets`),
+    getClientPaypalTransactions: (clientId) => request(`/api/accountant/client/${clientId}/paypal-transactions`),
     clientAccountantPackUrl: (clientId) => `${API_URL}/api/accountant/client/${clientId}/export/accountant-pack`,
   },
 };

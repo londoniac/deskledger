@@ -189,8 +189,9 @@ function ReportsTab({ clientId, profile }) {
       api.accountant.getClientDividends(clientId),
       api.accountant.getClientDLA(clientId),
       api.accountant.getClientFixedAssets(clientId),
-    ]).then(([txns, expenses, dividends, dla, assets]) => {
-      setData({ transactions: txns, expenses, dividends, dla, fixedAssets: assets });
+      api.accountant.getClientPaypalTransactions(clientId).catch(() => []),
+    ]).then(([txns, expenses, dividends, dla, assets, paypalTxns]) => {
+      setData({ transactions: txns, expenses, dividends, dla, fixedAssets: assets, paypalTxns: paypalTxns || [] });
     }).catch(() => {}).finally(() => setLoading(false));
   }, [clientId]);
 
@@ -219,7 +220,7 @@ function ReportsTab({ clientId, profile }) {
 
 // ─── CT600 Computation ───
 
-function CT600View({ profile, transactions, expenses: personalExpenses, dividends, dla, fixedAssets }) {
+function CT600View({ profile, transactions, expenses: personalExpenses, dividends, dla, fixedAssets, paypalTxns }) {
   const active = transactions.filter((t) => !t.excluded);
   const EXCLUDE_INCOME = ["transfer", "capital"];
   const nonDeductibleIds = EXPENSE_CATEGORIES.filter((c) => c.deductible === false).map((c) => c.id);
@@ -227,9 +228,11 @@ function CT600View({ profile, transactions, expenses: personalExpenses, dividend
   const turnover = r2(active.filter((t) => t.type === "income" && !EXCLUDE_INCOME.includes(t.category)).reduce((s, t) => s + Number(t.amount), 0));
   const bankExpenses = r2(active.filter((t) => t.type === "expense" && t.category !== "transfer" && !nonDeductibleIds.includes(t.category)).reduce((s, t) => s + Number(t.amount), 0));
   const entertainmentExpenses = r2(active.filter((t) => t.type === "expense" && nonDeductibleIds.includes(t.category)).reduce((s, t) => s + Number(t.amount), 0));
+  const ppAuthorPayouts = r2((paypalTxns || []).filter((t) => t.type === "author_payout").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  const ppFees = r2((paypalTxns || []).filter((t) => t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
   const peTotal = r2(personalExpenses.reduce((s, e) => s + Number(e.amount || 0), 0));
   const capAllowances = calcCapitalAllowances(fixedAssets, profile?.year_start, profile?.year_end);
-  const totalAllowable = r2(bankExpenses + peTotal + capAllowances.total);
+  const totalAllowable = r2(bankExpenses + ppAuthorPayouts + ppFees + peTotal + capAllowances.total);
   const tradingProfit = r2(turnover - totalAllowable);
 
   const associatedCompanies = Number(profile?.associated_companies || 0);
@@ -280,6 +283,8 @@ function CT600View({ profile, transactions, expenses: personalExpenses, dividend
         {Object.entries(expByHmrc).sort((a, b) => b[1] - a[1]).map(([cat, amt]) => (
           <CTRow key={cat} label={cat} value={r2(amt)} indent />
         ))}
+        {ppAuthorPayouts > 0 && <CTRow label="PayPal author payouts" value={ppAuthorPayouts} indent />}
+        {ppFees > 0 && <CTRow label="PayPal fees" value={ppFees} indent />}
         {peTotal > 0 && <CTRow label="Personal expense claims" value={peTotal} indent />}
         {capAllowances.total > 0 && <CTRow label="Capital allowances" value={capAllowances.total} indent />}
         <CTRow label="Total allowable expenses" value={totalAllowable} bold />
@@ -362,7 +367,7 @@ function CT600View({ profile, transactions, expenses: personalExpenses, dividend
 
 // ─── Profit & Loss ───
 
-function PLView({ profile, transactions, expenses: personalExpenses, fixedAssets }) {
+function PLView({ profile, transactions, expenses: personalExpenses, fixedAssets, paypalTxns }) {
   const active = transactions.filter((t) => !t.excluded);
   const EXCLUDE_INCOME = ["transfer", "capital"];
 
@@ -386,8 +391,13 @@ function PLView({ profile, transactions, expenses: personalExpenses, fixedAssets
     }
   });
 
+  const ppAuthorPayouts = r2((paypalTxns || []).filter((t) => t.type === "author_payout").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  const ppFees = r2((paypalTxns || []).filter((t) => t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
+  if (ppAuthorPayouts > 0) expenseByCategory["paypal_payouts"] = { label: "PayPal Author Payouts", hmrc: "Cost of goods sold", total: ppAuthorPayouts };
+  if (ppFees > 0) expenseByCategory["paypal_fees"] = { label: "PayPal Fees", hmrc: "Interest and bank charges", total: ppFees };
+
   const peTotal = r2(personalExpenses.reduce((s, e) => s + Number(e.amount || 0), 0));
-  if (peTotal > 0) expenseByCategory["personal_expenses"] = { label: "Personal Expense Claims", hmrc: "Various", total: peTotal };
+  if (peTotal > 0) expenseByCategory["personal_expenses"] = { label: "Personal Expense Claims", hmrc: "Various (see breakdown)", total: peTotal };
 
   const capAllowances = calcCapitalAllowances(fixedAssets, profile?.year_start, profile?.year_end);
   if (capAllowances.total > 0) expenseByCategory["capital_allowances"] = { label: "Capital Allowances", hmrc: "Capital allowances", total: capAllowances.total };
@@ -447,14 +457,15 @@ function PLView({ profile, transactions, expenses: personalExpenses, fixedAssets
 
 // ─── Year Summary ───
 
-function SummaryView({ profile, transactions, expenses: personalExpenses, dividends, dla, fixedAssets }) {
+function SummaryView({ profile, transactions, expenses: personalExpenses, dividends, dla, fixedAssets, paypalTxns }) {
   const active = transactions.filter((t) => !t.excluded);
   const EXCLUDE_INCOME = ["transfer", "capital"];
 
   const tradingIncome = r2(active.filter((t) => t.type === "income" && !EXCLUDE_INCOME.includes(t.category)).reduce((s, t) => s + Number(t.amount), 0));
   const bankExpenses = r2(active.filter((t) => t.type === "expense" && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0));
+  const ppExpenses = r2((paypalTxns || []).filter((t) => t.type === "author_payout" || t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
   const peTotal = r2(personalExpenses.reduce((s, e) => s + Number(e.amount || 0), 0));
-  const totalExpenses = r2(bankExpenses + peTotal);
+  const totalExpenses = r2(bankExpenses + ppExpenses + peTotal);
   const netProfit = r2(tradingIncome - totalExpenses);
 
   const ct = calcCorpTaxFull(netProfit, Number(profile?.associated_companies || 0), Number(profile?.brought_forward_losses || 0));

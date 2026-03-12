@@ -62,7 +62,7 @@ router.get("/client/:clientId/profile", async (req, res, next) => {
   try {
     const { data, error } = await req.supabase
       .from("user_profiles")
-      .select("company_name, company_reg, tax_ref, year_start, year_end, tax_rate, vat_registered, vat_number, email")
+      .select("company_name, company_reg, tax_ref, year_start, year_end, tax_rate, vat_registered, vat_number, email, seed_money, associated_companies, brought_forward_losses")
       .eq("id", req.clientId)
       .maybeSingle();
     if (error) throw error;
@@ -140,6 +140,21 @@ router.get("/client/:clientId/vat-returns", async (req, res, next) => {
       .select("*")
       .eq("user_id", req.clientId)
       .order("period_start", { ascending: false });
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/accountant/client/:clientId/paypal-transactions
+router.get("/client/:clientId/paypal-transactions", async (req, res, next) => {
+  try {
+    const { data, error } = await req.supabase
+      .from("paypal_transactions")
+      .select("*")
+      .eq("user_id", req.clientId)
+      .order("date", { ascending: false });
     if (error) throw error;
     res.json(data || []);
   } catch (err) {
