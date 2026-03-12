@@ -2,6 +2,12 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { PALETTE } from "../lib/constants.js";
 
+const ACCOUNT_TYPES = [
+  { id: "business", label: "Business", desc: "Ltd company, sole trader" },
+  { id: "personal", label: "Personal", desc: "Track spending & savings" },
+  { id: "accountant", label: "Accountant", desc: "Manage client accounts" },
+];
+
 export default function Signup({ onSwitch }) {
   const { signUp } = useAuth();
   const [email, setEmail] = useState("");
@@ -49,26 +55,26 @@ export default function Signup({ onSwitch }) {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: PALETTE.bg }}>
-      <div style={{ width: 400, padding: 40, background: PALETTE.card, borderRadius: 16, border: `1px solid ${PALETTE.border}` }}>
+      <div style={{ width: 440, padding: 40, background: PALETTE.card, borderRadius: 16, border: `1px solid ${PALETTE.border}` }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4, color: PALETTE.text }}>Create Account</h1>
         <p style={{ fontSize: 14, color: PALETTE.textMuted, marginBottom: 24 }}>14-day free trial. No card required.</p>
 
         <form onSubmit={handleSubmit}>
           {/* Account type toggle */}
           <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-            {[{ id: "business", label: "Business", desc: "Ltd company, sole trader" }, { id: "personal", label: "Personal", desc: "Track spending & savings" }].map((t) => (
+            {ACCOUNT_TYPES.map((t) => (
               <div
                 key={t.id}
                 onClick={() => setAccountType(t.id)}
                 style={{
-                  flex: 1, padding: "14px 16px", borderRadius: 10, cursor: "pointer",
+                  flex: 1, padding: "14px 12px", borderRadius: 10, cursor: "pointer",
                   border: `2px solid ${accountType === t.id ? PALETTE.accent : PALETTE.border}`,
                   background: accountType === t.id ? PALETTE.accent + "10" : "transparent",
                   transition: "all 0.2s",
                 }}
               >
-                <div style={{ fontSize: 14, fontWeight: 600, color: accountType === t.id ? PALETTE.accent : PALETTE.text }}>{t.label}</div>
-                <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 2 }}>{t.desc}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: accountType === t.id ? PALETTE.accent : PALETTE.text }}>{t.label}</div>
+                <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2 }}>{t.desc}</div>
               </div>
             ))}
           </div>

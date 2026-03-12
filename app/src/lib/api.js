@@ -187,6 +187,26 @@ const api = {
     update: (id, data) => request(`/api/journal-entries/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id) => request(`/api/journal-entries/${id}`, { method: "DELETE" }),
   },
+
+  invitations: {
+    list: () => request("/api/invitations"),
+    create: (email) => request("/api/invitations", { method: "POST", body: JSON.stringify({ email }) }),
+    accept: (id) => request(`/api/invitations/${id}/accept`, { method: "PUT" }),
+    decline: (id) => request(`/api/invitations/${id}/decline`, { method: "PUT" }),
+    revoke: (id) => request(`/api/invitations/${id}`, { method: "DELETE" }),
+  },
+
+  accountant: {
+    getClients: () => request("/api/accountant/clients"),
+    getClientProfile: (clientId) => request(`/api/accountant/client/${clientId}/profile`),
+    getClientTransactions: (clientId) => request(`/api/accountant/client/${clientId}/transactions`),
+    getClientExpenses: (clientId) => request(`/api/accountant/client/${clientId}/expenses`),
+    getClientDividends: (clientId) => request(`/api/accountant/client/${clientId}/dividends`),
+    getClientDLA: (clientId) => request(`/api/accountant/client/${clientId}/dla`),
+    getClientVATReturns: (clientId) => request(`/api/accountant/client/${clientId}/vat-returns`),
+    getClientFixedAssets: (clientId) => request(`/api/accountant/client/${clientId}/fixed-assets`),
+    clientAccountantPackUrl: (clientId) => `${API_URL}/api/accountant/client/${clientId}/export/accountant-pack`,
+  },
 };
 
 export default api;

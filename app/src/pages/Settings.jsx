@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import api from "../lib/api.js";
+import { supabase } from "../lib/supabase.js";
 import { PALETTE } from "../lib/constants.js";
-import { Card, Button, Input, Label, Select, ErrorMsg, SuccessMsg, Spinner } from "../components/ui.jsx";
+import { Card, Button, Input, Label, Select, ErrorMsg, SuccessMsg, Spinner, Badge } from "../components/ui.jsx";
 import { useWorkspace } from "../App.jsx";
 
 const TAX_RATES = [
@@ -180,6 +181,12 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
         </Button>
       </div>
 
+      {/* Security — 2FA */}
+      <SecuritySettings />
+
+      {/* Accountant Access (business owners only) */}
+      {isBusiness && <AccountantAccessSettings />}
+
       {/* Data Maintenance */}
       {isBusiness && <DataMaintenance />}
 
@@ -199,6 +206,243 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
         </div>
       </Card>
     </div>
+  );
+}
+
+function SecuritySettings() {
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
+  const [qrUri, setQrUri] = useState("");
+  const [secret, setSecret] = useState("");
+  const [factorId, setFactorId] = useState(null);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState({ type: "", text: "" });
+
+  useEffect(() => {
+    checkMfaStatus();
+  }, []);
+
+  const checkMfaStatus = async () => {
+    try {
+      const { data } = await supabase.auth.mfa.listFactors();
+      const verified = data?.totp?.filter((f) => f.status === "verified") || [];
+      if (verified.length > 0) {
+        setMfaEnabled(true);
+        setFactorId(verified[0].id);
+      }
+    } catch (e) {
+      // ignore
+    }
+    setLoading(false);
+  };
+
+  const startEnroll = async () => {
+    setMessage({ type: "", text: "" });
+    try {
+      const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "DeskLedger" });
+      if (error) throw error;
+      setQrUri(data.totp.qr_code);
+      setSecret(data.totp.secret);
+      setFactorId(data.id);
+      setEnrolling(true);
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
+  const confirmEnroll = async () => {
+    setMessage({ type: "", text: "" });
+    try {
+      const { data: challenge, error: challengeErr } = await supabase.auth.mfa.challenge({ factorId });
+      if (challengeErr) throw challengeErr;
+      const { error: verifyErr } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId: challenge.id,
+        code: verifyCode,
+      });
+      if (verifyErr) throw verifyErr;
+      setMfaEnabled(true);
+      setEnrolling(false);
+      setQrUri("");
+      setSecret("");
+      setVerifyCode("");
+      setMessage({ type: "success", text: "2FA enabled successfully" });
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
+  const disableMfa = async () => {
+    setMessage({ type: "", text: "" });
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId });
+      if (error) throw error;
+      setMfaEnabled(false);
+      setFactorId(null);
+      setMessage({ type: "success", text: "2FA disabled" });
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
+  if (loading) return null;
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 12 }}>Security</h3>
+
+      {message.type === "error" && <ErrorMsg message={message.text} />}
+      {message.type === "success" && <SuccessMsg message={message.text} />}
+
+      <div style={{ fontSize: 13, color: PALETTE.textDim, marginBottom: 16 }}>
+        Two-factor authentication (2FA):{" "}
+        <span style={{ color: mfaEnabled ? PALETTE.accent : PALETTE.textMuted, fontWeight: 600 }}>
+          {mfaEnabled ? "Enabled" : "Disabled"}
+        </span>
+      </div>
+
+      {!mfaEnabled && !enrolling && (
+        <Button variant="outline" onClick={startEnroll}>Enable 2FA</Button>
+      )}
+
+      {enrolling && (
+        <div>
+          <p style={{ fontSize: 13, color: PALETTE.textDim, marginBottom: 12 }}>
+            Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):
+          </p>
+          {qrUri && (
+            <div style={{ marginBottom: 16, textAlign: "center" }}>
+              <img src={qrUri} alt="2FA QR Code" style={{ width: 200, height: 200, borderRadius: 8 }} />
+            </div>
+          )}
+          <div style={{ marginBottom: 16 }}>
+            <Label>Or enter this secret manually:</Label>
+            <div style={{
+              padding: "8px 12px", background: PALETTE.bg, border: `1px solid ${PALETTE.border}`,
+              borderRadius: 6, fontSize: 12, color: PALETTE.text, fontFamily: "JetBrains Mono, monospace",
+              wordBreak: "break-all", userSelect: "all",
+            }}>
+              {secret}
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <Label>Enter the 6-digit code from your app to verify:</Label>
+            <Input
+              value={verifyCode}
+              onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="000000"
+              style={{ maxWidth: 200, textAlign: "center", letterSpacing: 4, fontSize: 18 }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button onClick={confirmEnroll} disabled={verifyCode.length !== 6}>Verify & Enable</Button>
+            <Button variant="ghost" onClick={() => { setEnrolling(false); setQrUri(""); setSecret(""); }}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {mfaEnabled && (
+        <Button variant="danger" onClick={disableMfa}>Disable 2FA</Button>
+      )}
+    </Card>
+  );
+}
+
+function AccountantAccessSettings() {
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitations, setInvitations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
+
+  useEffect(() => {
+    loadInvitations();
+  }, []);
+
+  const loadInvitations = async () => {
+    try {
+      const data = await api.invitations.list();
+      setInvitations(data);
+    } catch (e) {
+      // ignore
+    }
+    setLoading(false);
+  };
+
+  const sendInvitation = async () => {
+    if (!inviteEmail) return;
+    setSending(true);
+    setMessage({ type: "", text: "" });
+    try {
+      await api.invitations.create(inviteEmail);
+      setInviteEmail("");
+      setMessage({ type: "success", text: "Invitation sent" });
+      await loadInvitations();
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+    setSending(false);
+  };
+
+  const revokeInvitation = async (id) => {
+    try {
+      await api.invitations.revoke(id);
+      await loadInvitations();
+    } catch (e) {
+      setMessage({ type: "error", text: e.message });
+    }
+  };
+
+  const statusColor = (status) => {
+    if (status === "accepted") return PALETTE.accent;
+    if (status === "pending") return PALETTE.warning;
+    if (status === "declined") return PALETTE.danger;
+    return PALETTE.textMuted;
+  };
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Accountant Access</h3>
+      <p style={{ fontSize: 12, color: PALETTE.textMuted, marginBottom: 16 }}>
+        Invite your accountant to view your books read-only. They'll need a DeskLedger account.
+      </p>
+
+      {message.type === "error" && <ErrorMsg message={message.text} />}
+      {message.type === "success" && <SuccessMsg message={message.text} />}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <Input
+          type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+          placeholder="accountant@example.com"
+          style={{ flex: 1 }}
+        />
+        <Button onClick={sendInvitation} disabled={!inviteEmail || sending}>
+          {sending ? "Sending..." : "Invite"}
+        </Button>
+      </div>
+
+      {!loading && invitations.length > 0 && (
+        <div>
+          {invitations.map((inv) => (
+            <div key={inv.id} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 0", borderBottom: `1px solid ${PALETTE.border}`,
+            }}>
+              <div>
+                <span style={{ fontSize: 13, color: PALETTE.text }}>{inv.to_email}</span>
+                <Badge color={statusColor(inv.status)} style={{ marginLeft: 8 }}>{inv.status}</Badge>
+              </div>
+              {(inv.status === "pending" || inv.status === "accepted") && (
+                <Button variant="ghost" onClick={() => revokeInvitation(inv.id)} style={{ fontSize: 11, padding: "4px 8px" }}>
+                  Revoke
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

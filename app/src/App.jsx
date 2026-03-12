@@ -17,6 +17,8 @@ import FixedAssets from "./pages/FixedAssets.jsx";
 import Reports from "./pages/Reports.jsx";
 import Expenses from "./pages/Expenses.jsx";
 import PayPalPage from "./pages/PayPal.jsx";
+import AccountantDashboard from "./pages/AccountantDashboard.jsx";
+import AccountantClientView from "./pages/AccountantClientView.jsx";
 
 // Workspace context — available to all child components
 const WorkspaceContext = createContext({ mode: "business" });
@@ -35,6 +37,11 @@ const BUSINESS_TABS = [
   { id: "settings", label: "Settings" },
 ];
 
+const ACCOUNTANT_TABS = [
+  { id: "clients", label: "Clients" },
+  { id: "settings", label: "Settings" },
+];
+
 // TEMPORARILY HIDDEN — personal tabs will return when personal mode is re-enabled
 // const PERSONAL_TABS = [
 //   { id: "dashboard", label: "Dashboard" },
@@ -46,26 +53,40 @@ const BUSINESS_TABS = [
 // ];
 
 export default function App() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, signOut, mfaRequired } = useAuth();
   const [authPage, setAuthPage] = useState("login");
   const [activeTab, setActiveTab] = useState("dashboard");
   const mode = "business";
   const [profile, setProfile] = useState(null);
   const [paypalConnected, setPaypalConnected] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState(null);
+
+  const isAccountant = profile?.role === "accountant";
 
   useEffect(() => {
-    if (user) {
-      api.profile.get().then(setProfile).catch(() => {});
+    if (user && !mfaRequired) {
+      api.profile.get().then((p) => {
+        setProfile(p);
+        // Set default tab based on role
+        if (p.role === "accountant") {
+          setActiveTab("clients");
+        }
+      }).catch(() => {});
       api.paypal.hasCredentials()
         .then((r) => setPaypalConnected(r.hasCredentials))
         .catch(() => {});
     }
-  }, [user]);
+  }, [user, mfaRequired]);
 
-  const tabs = paypalConnected
-    ? [...BUSINESS_TABS.slice(0, 3), { id: "paypal", label: "PayPal" }, ...BUSINESS_TABS.slice(3)]
-    : BUSINESS_TABS;
-  const displayName = profile?.company_name || "Business";
+  const tabs = isAccountant
+    ? ACCOUNTANT_TABS
+    : paypalConnected
+      ? [...BUSINESS_TABS.slice(0, 3), { id: "paypal", label: "PayPal" }, ...BUSINESS_TABS.slice(3)]
+      : BUSINESS_TABS;
+
+  const displayName = isAccountant
+    ? "Accountant"
+    : profile?.company_name || "Business";
 
   if (loading) {
     return (
@@ -77,6 +98,11 @@ export default function App() {
 
   if (!user) {
     if (authPage === "signup") return <Signup onSwitch={setAuthPage} />;
+    return <Login onSwitch={setAuthPage} />;
+  }
+
+  // MFA gate — user is logged in but hasn't verified 2FA yet
+  if (mfaRequired) {
     return <Login onSwitch={setAuthPage} />;
   }
 
@@ -102,7 +128,10 @@ export default function App() {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    if (tab.id === "clients") setSelectedClientId(null);
+                  }}
                   style={{
                     padding: "6px 14px", border: "none", borderRadius: 8, cursor: "pointer",
                     fontSize: 12, fontWeight: 500,
@@ -128,19 +157,35 @@ export default function App() {
 
         {/* Content */}
         <div style={{ padding: "24px 32px", maxWidth: 1200, margin: "0 auto" }}>
-          {activeTab === "dashboard" && <Dashboard />}
-          {activeTab === "budget" && <Budget />}
-          {activeTab === "transactions" && <Transactions />}
-          {activeTab === "debts" && <Debts />}
-          {activeTab === "import" && <Import />}
-          {activeTab === "paypal" && <PayPalPage />}
-          {activeTab === "expenses" && <Expenses />}
-          {activeTab === "dividends" && <Dividends />}
-          {activeTab === "dla" && <DLA />}
-          {activeTab === "assets" && <FixedAssets />}
-          {activeTab === "vat" && <VATReturns />}
-          {activeTab === "reports" && <Reports />}
-          {activeTab === "settings" && <Settings onProfileUpdate={setProfile} onPaypalConnected={() => setPaypalConnected(true)} />}
+          {isAccountant ? (
+            // Accountant views
+            <>
+              {activeTab === "clients" && !selectedClientId && (
+                <AccountantDashboard onSelectClient={(id) => setSelectedClientId(id)} />
+              )}
+              {activeTab === "clients" && selectedClientId && (
+                <AccountantClientView clientId={selectedClientId} onBack={() => setSelectedClientId(null)} />
+              )}
+              {activeTab === "settings" && <Settings onProfileUpdate={setProfile} />}
+            </>
+          ) : (
+            // Business/personal views
+            <>
+              {activeTab === "dashboard" && <Dashboard />}
+              {activeTab === "budget" && <Budget />}
+              {activeTab === "transactions" && <Transactions />}
+              {activeTab === "debts" && <Debts />}
+              {activeTab === "import" && <Import />}
+              {activeTab === "paypal" && <PayPalPage />}
+              {activeTab === "expenses" && <Expenses />}
+              {activeTab === "dividends" && <Dividends />}
+              {activeTab === "dla" && <DLA />}
+              {activeTab === "assets" && <FixedAssets />}
+              {activeTab === "vat" && <VATReturns />}
+              {activeTab === "reports" && <Reports />}
+              {activeTab === "settings" && <Settings onProfileUpdate={setProfile} onPaypalConnected={() => setPaypalConnected(true)} />}
+            </>
+          )}
         </div>
       </div>
     </WorkspaceContext.Provider>

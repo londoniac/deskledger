@@ -18,6 +18,8 @@ import dlaRoutes from "./routes/dla.js";
 import vatReturnRoutes from "./routes/vat-returns.js";
 import fixedAssetRoutes from "./routes/fixed-assets.js";
 import journalEntryRoutes from "./routes/journal-entries.js";
+import invitationRoutes from "./routes/invitations.js";
+import accountantRoutes from "./routes/accountant.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -59,6 +61,8 @@ app.use("/api/dla", dlaRoutes);
 app.use("/api/vat-returns", vatReturnRoutes);
 app.use("/api/fixed-assets", fixedAssetRoutes);
 app.use("/api/journal-entries", journalEntryRoutes);
+app.use("/api/invitations", invitationRoutes);
+app.use("/api/accountant", accountantRoutes);
 
 // ─── Error Handler ───
 app.use((err, _req, res, _next) => {
