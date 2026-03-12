@@ -530,13 +530,17 @@ function OverviewTab({ clientId }) {
       api.accountant.getClientDividends(clientId),
       api.accountant.getClientDLA(clientId),
       api.accountant.getClientFixedAssets(clientId),
-    ]).then(([txns, exp, divs, dla, assets]) => {
+      api.accountant.getClientPaypalTransactions(clientId).catch(() => []),
+    ]).then(([txns, exp, divs, dla, assets, ppTxns]) => {
       const active = txns.filter((t) => !t.excluded);
       const income = active.filter((t) => t.type === "income" && t.category !== "transfer" && t.category !== "capital").reduce((s, t) => s + Number(t.amount), 0);
-      const expenses = active.filter((t) => t.type === "expense" && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0);
+      const bankExpenses = active.filter((t) => t.type === "expense" && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0);
+      const ppExpenses = (ppTxns || []).filter((t) => t.type === "author_payout" || t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0);
+      const peExpenses = (exp || []).reduce((s, e) => s + Number(e.amount || 0), 0);
+      const totalExpenses = r2(bankExpenses + ppExpenses + peExpenses);
       let dlaBalance = 0;
       dla.forEach((e) => { if (e.direction === "to_director") dlaBalance += Number(e.amount); else dlaBalance -= Number(e.amount); });
-      setData({ income, expenses, profit: income - expenses, totalDividends: divs.reduce((s, d) => s + Number(d.amount), 0), dlaBalance, totalAssets: assets.reduce((s, a) => s + Number(a.cost), 0) });
+      setData({ income, expenses: totalExpenses, profit: r2(income - totalExpenses), totalDividends: divs.reduce((s, d) => s + Number(d.amount), 0), dlaBalance, totalAssets: assets.reduce((s, a) => s + Number(a.cost), 0) });
     }).catch(() => {}).finally(() => setLoading(false));
   }, [clientId]);
 
