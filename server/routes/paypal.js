@@ -1,6 +1,8 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { syncTransactions, testConnection } from "../services/paypal.js";
+import { validate, dbError } from "../middleware/validate.js";
+import { paypalCredentialsSchema, paypalSyncSchema } from "../schemas.js";
 
 const router = Router();
 const ALGO = "aes-256-gcm";
@@ -48,7 +50,7 @@ async function checkAddon(req, res, next) {
 }
 
 // POST /api/paypal/test — test PayPal credentials
-router.post("/test", checkAddon, async (req, res) => {
+router.post("/test", checkAddon, validate(paypalCredentialsSchema), async (req, res) => {
   const { client_id, client_secret, sandbox } = req.body;
   try {
     await testConnection(client_id, client_secret, sandbox || false);
@@ -59,7 +61,7 @@ router.post("/test", checkAddon, async (req, res) => {
 });
 
 // POST /api/paypal/save-credentials — encrypt and store PayPal credentials
-router.post("/save-credentials", checkAddon, async (req, res) => {
+router.post("/save-credentials", checkAddon, validate(paypalCredentialsSchema), async (req, res) => {
   const { client_id, client_secret, sandbox } = req.body;
 
   const encId = encrypt(client_id);
@@ -75,7 +77,7 @@ router.post("/save-credentials", checkAddon, async (req, res) => {
     })
     .eq("id", req.userId);
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "PayPal operation");
   res.json({ success: true });
 });
 
@@ -94,7 +96,7 @@ router.get("/has-credentials", checkAddon, async (req, res) => {
 });
 
 // POST /api/paypal/sync — sync transactions from PayPal API
-router.post("/sync", checkAddon, async (req, res) => {
+router.post("/sync", checkAddon, validate(paypalSyncSchema), async (req, res) => {
   const { start_date, end_date } = req.body;
 
   // Get stored credentials
@@ -139,7 +141,7 @@ router.post("/sync", checkAddon, async (req, res) => {
         .from("paypal_transactions")
         .upsert(rows, { onConflict: "id,user_id" });
 
-      if (error) return res.status(400).json({ error: error.message });
+      if (error) return dbError(res, error, "PayPal operation");
     }
 
     res.json({
@@ -165,7 +167,7 @@ router.get("/transactions", checkAddon, async (req, res) => {
     .select("*")
     .eq("user_id", req.userId)
     .order("date", { ascending: false });
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "PayPal operation");
   res.json(data);
 });
 
@@ -175,7 +177,7 @@ router.delete("/transactions", checkAddon, async (req, res) => {
     .from("paypal_transactions")
     .delete({ count: "exact" })
     .eq("user_id", req.userId);
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "PayPal operation");
   res.json({ success: true, deleted: count });
 });
 
@@ -186,7 +188,7 @@ router.delete("/transactions/:id", checkAddon, async (req, res) => {
     .delete()
     .eq("id", req.params.id)
     .eq("user_id", req.userId);
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "PayPal operation");
   res.json({ success: true });
 });
 

@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate } from "../middleware/validate.js";
+import { fixedAssetSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -57,7 +59,7 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/fixed-assets
-router.post("/", async (req, res, next) => {
+router.post("/", validate(fixedAssetSchema), async (req, res, next) => {
   try {
     const d = req.body;
     const row = {

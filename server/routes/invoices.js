@@ -1,5 +1,7 @@
 import { Router } from "express";
 import express from "express";
+import { validate } from "../middleware/validate.js";
+import { invoiceSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -20,7 +22,7 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/invoices
-router.post("/", async (req, res, next) => {
+router.post("/", validate(invoiceSchema), async (req, res, next) => {
   try {
     const inv = {
       id: req.body.id,

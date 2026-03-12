@@ -1,5 +1,7 @@
 import { Router } from "express";
 import express from "express";
+import { validate } from "../middleware/validate.js";
+import { expenseSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -20,7 +22,7 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/expenses
-router.post("/", async (req, res, next) => {
+router.post("/", validate(expenseSchema), async (req, res, next) => {
   try {
     const expense = {
       id: req.body.id,

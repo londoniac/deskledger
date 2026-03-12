@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate } from "../middleware/validate.js";
+import { profileUpdateSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -31,7 +33,7 @@ router.get("/", async (req, res, next) => {
 });
 
 // PUT /api/profile
-router.put("/", async (req, res, next) => {
+router.put("/", validate(profileUpdateSchema), async (req, res, next) => {
   try {
     const allowed = [
       "company_name", "company_reg", "tax_ref", "year_start", "year_end",

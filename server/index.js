@@ -63,9 +63,10 @@ app.use("/api/journal-entries", journalEntryRoutes);
 // ─── Error Handler ───
 app.use((err, _req, res, _next) => {
   console.error("Server error:", err);
-  res.status(err.status || 500).json({
-    error: err.message || "Internal server error",
-  });
+  const status = err.status || 500;
+  // Only expose error details for client errors (4xx), not server errors (5xx)
+  const message = status < 500 ? (err.message || "Bad request") : "Internal server error";
+  res.status(status).json({ error: message });
 });
 
 app.listen(PORT, () => {

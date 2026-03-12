@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate } from "../middleware/validate.js";
+import { dlaSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -47,7 +49,7 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/dla
-router.post("/", async (req, res, next) => {
+router.post("/", validate(dlaSchema), async (req, res, next) => {
   try {
     const d = req.body;
     const row = {

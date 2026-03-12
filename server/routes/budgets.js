@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate, dbError } from "../middleware/validate.js";
+import { budgetSchema, incomeSourceSchema, categoryRuleSchema, customCategorySchema } from "../schemas.js";
 
 const router = Router();
 
@@ -10,19 +12,19 @@ router.get("/", async (req, res) => {
     .eq("user_id", req.userId);
   if (req.query.month) query.eq("month", req.query.month);
   const { data, error } = await query.order("category");
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Fetch budgets");
   res.json(data);
 });
 
 // POST /api/budgets — create or update budget
-router.post("/", async (req, res) => {
+router.post("/", validate(budgetSchema), async (req, res) => {
   const row = { ...req.body, user_id: req.userId, updated_at: new Date().toISOString() };
   const { data, error } = await req.supabase
     .from("budgets")
     .upsert(row, { onConflict: "user_id,category,month" })
     .select()
     .single();
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Save budget");
   res.json(data);
 });
 
@@ -33,7 +35,7 @@ router.delete("/:id", async (req, res) => {
     .delete()
     .eq("id", req.params.id)
     .eq("user_id", req.userId);
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Delete budget");
   res.json({ success: true });
 });
 
@@ -46,19 +48,19 @@ router.get("/income-sources", async (req, res) => {
     .select("*")
     .eq("user_id", req.userId)
     .order("earner");
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Fetch income sources");
   res.json(data);
 });
 
 // POST /api/budgets/income-sources
-router.post("/income-sources", async (req, res) => {
+router.post("/income-sources", validate(incomeSourceSchema), async (req, res) => {
   const row = { ...req.body, user_id: req.userId };
   const { data, error } = await req.supabase
     .from("income_sources")
     .upsert(row, { onConflict: "id,user_id" })
     .select()
     .single();
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Save income source");
   res.json(data);
 });
 
@@ -69,7 +71,7 @@ router.delete("/income-sources/:id", async (req, res) => {
     .delete()
     .eq("id", req.params.id)
     .eq("user_id", req.userId);
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Delete income source");
   res.json({ success: true });
 });
 
@@ -82,12 +84,12 @@ router.get("/rules", async (req, res) => {
     .select("*")
     .eq("user_id", req.userId)
     .order("priority", { ascending: false });
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Fetch rules");
   res.json(data);
 });
 
 // POST /api/budgets/rules — save a category rule (learn from user)
-router.post("/rules", async (req, res) => {
+router.post("/rules", validate(categoryRuleSchema), async (req, res) => {
   const row = {
     user_id: req.userId,
     pattern: req.body.pattern.toLowerCase().trim(),
@@ -101,7 +103,7 @@ router.post("/rules", async (req, res) => {
     .upsert(row, { onConflict: "user_id,pattern,type" })
     .select()
     .single();
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Save rule");
   res.json(data);
 });
 
@@ -112,7 +114,7 @@ router.delete("/rules/:id", async (req, res) => {
     .delete()
     .eq("id", req.params.id)
     .eq("user_id", req.userId);
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Delete rule");
   res.json({ success: true });
 });
 
@@ -125,19 +127,19 @@ router.get("/categories", async (req, res) => {
     .select("*")
     .eq("user_id", req.userId)
     .order("sort_order");
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Fetch categories");
   res.json(data);
 });
 
 // POST /api/budgets/categories
-router.post("/categories", async (req, res) => {
+router.post("/categories", validate(customCategorySchema), async (req, res) => {
   const row = { ...req.body, user_id: req.userId };
   const { data, error } = await req.supabase
     .from("custom_categories")
     .upsert(row, { onConflict: "id,user_id" })
     .select()
     .single();
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Save category");
   res.json(data);
 });
 
@@ -148,7 +150,7 @@ router.delete("/categories/:id", async (req, res) => {
     .delete()
     .eq("id", req.params.id)
     .eq("user_id", req.userId);
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Delete category");
   res.json({ success: true });
 });
 

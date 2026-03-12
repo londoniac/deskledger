@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate } from "../middleware/validate.js";
+import { vatReturnSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -36,7 +38,7 @@ router.get("/:id", async (req, res, next) => {
 });
 
 // POST /api/vat-returns — create or update a return
-router.post("/", async (req, res, next) => {
+router.post("/", validate(vatReturnSchema), async (req, res, next) => {
   try {
     const d = req.body;
     const row = {

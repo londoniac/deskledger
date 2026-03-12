@@ -1,15 +1,14 @@
 import { Router } from "express";
 import { parseCSV, normalizeTransactions, autoCategory, extractClosingBalance } from "../services/csv.js";
+import { validate } from "../middleware/validate.js";
+import { importParseSchema, importConfirmSchema } from "../schemas.js";
 
 const router = Router();
 
 // POST /api/import/parse — upload CSV text, return parsed preview
-router.post("/parse", async (req, res, next) => {
+router.post("/parse", validate(importParseSchema), async (req, res, next) => {
   try {
     const { csv, source } = req.body;
-    if (!csv) {
-      return res.status(400).json({ error: "No CSV data provided" });
-    }
 
     const rows = parseCSV(csv);
     if (rows.length === 0) {
@@ -68,12 +67,9 @@ router.post("/parse", async (req, res, next) => {
 });
 
 // POST /api/import/confirm — save parsed transactions
-router.post("/confirm", async (req, res, next) => {
+router.post("/confirm", validate(importConfirmSchema), async (req, res, next) => {
   try {
     const { transactions } = req.body;
-    if (!Array.isArray(transactions) || transactions.length === 0) {
-      return res.status(400).json({ error: "No transactions to import" });
-    }
 
     const rows = transactions.map((t) => ({
       id: t.id,

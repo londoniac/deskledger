@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate, dbError } from "../middleware/validate.js";
+import { debtSchema, debtPaymentSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -9,19 +11,19 @@ router.get("/", async (req, res) => {
     .select("*")
     .eq("user_id", req.userId)
     .order("created_at", { ascending: true });
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Fetch debts");
   res.json(data);
 });
 
 // POST /api/debts — create/upsert debt account
-router.post("/", async (req, res) => {
+router.post("/", validate(debtSchema), async (req, res) => {
   const row = { ...req.body, user_id: req.userId, updated_at: new Date().toISOString() };
   const { data, error } = await req.supabase
     .from("debt_accounts")
     .upsert(row, { onConflict: "id,user_id" })
     .select()
     .single();
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Save debt");
   res.json(data);
 });
 
@@ -34,7 +36,7 @@ router.put("/:id", async (req, res) => {
     .eq("user_id", req.userId)
     .select()
     .single();
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Update debt");
   res.json(data);
 });
 
@@ -45,7 +47,7 @@ router.delete("/:id", async (req, res) => {
     .delete()
     .eq("id", req.params.id)
     .eq("user_id", req.userId);
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Delete debt");
   res.json({ success: true });
 });
 
@@ -57,19 +59,19 @@ router.get("/:id/payments", async (req, res) => {
     .eq("user_id", req.userId)
     .eq("debt_account_id", req.params.id)
     .order("date", { ascending: false });
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Fetch payments");
   res.json(data);
 });
 
 // POST /api/debts/:id/payments — log a payment
-router.post("/:id/payments", async (req, res) => {
+router.post("/:id/payments", validate(debtPaymentSchema), async (req, res) => {
   const row = { ...req.body, user_id: req.userId, debt_account_id: req.params.id };
   const { data, error } = await req.supabase
     .from("debt_payments")
     .insert(row)
     .select()
     .single();
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return dbError(res, error, "Save payment");
   res.json(data);
 });
 

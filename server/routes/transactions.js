@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate, dbError } from "../middleware/validate.js";
+import { transactionBatch } from "../schemas.js";
 
 const router = Router();
 
@@ -19,12 +21,9 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/transactions — upsert batch
-router.post("/", async (req, res, next) => {
+router.post("/", validate(transactionBatch), async (req, res, next) => {
   try {
     const txns = req.body;
-    if (!Array.isArray(txns)) {
-      return res.status(400).json({ error: "Expected array of transactions" });
-    }
 
     const rows = txns.map((t) => ({
       id: t.id,
@@ -201,7 +200,7 @@ router.post("/fix-exclusions", async (req, res, next) => {
           .eq("user_id", req.userId);
 
         if (updateErr) {
-          fixes.push({ id: t.id, description: t.description, status: "error", error: updateErr.message });
+          fixes.push({ id: t.id, description: t.description, status: "error", error: "Update failed" });
         } else {
           fixes.push({ id: t.id, description: t.description, status: "fixed", applied: update });
         }

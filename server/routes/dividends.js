@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { validate } from "../middleware/validate.js";
+import { dividendSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -19,7 +21,7 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/dividends
-router.post("/", async (req, res, next) => {
+router.post("/", validate(dividendSchema), async (req, res, next) => {
   try {
     const d = req.body;
     const row = {
