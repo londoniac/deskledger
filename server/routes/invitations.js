@@ -12,11 +12,21 @@ router.get("/", async (req, res, next) => {
       // Accountants see invitations sent to their email
       const { data, error } = await req.supabase
         .from("invitations")
-        .select("*, from_profile:from_user_id(company_name, email)")
+        .select("*")
         .eq("to_email", profile.email)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return res.json(data || []);
+
+      // Enrich with sender profile info
+      const enriched = await Promise.all((data || []).map(async (inv) => {
+        const { data: sender } = await req.supabase
+          .from("user_profiles")
+          .select("company_name, email")
+          .eq("id", inv.from_user_id)
+          .maybeSingle();
+        return { ...inv, from_profile: sender };
+      }));
+      return res.json(enriched);
     }
 
     // Business owners see invitations they sent
