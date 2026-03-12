@@ -98,6 +98,23 @@ const api = {
   export: {
     accountantPackUrl: () => `${API_URL}/api/export/accountant-pack`,
     transactionsCsvUrl: () => `${API_URL}/api/export/transactions.csv`,
+    download: async (path, fileName) => {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      const res = await fetch(`${API_URL}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    },
   },
 
   paypal: {

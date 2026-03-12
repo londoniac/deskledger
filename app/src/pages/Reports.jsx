@@ -76,8 +76,8 @@ export default function Reports() {
           Download your data for your accountant or personal records.
         </p>
         <div style={{ display: "flex", gap: 12 }}>
-          <Button variant="outline" onClick={() => window.open(api.export.accountantPackUrl(), "_blank")}>Download Accountant Pack (.zip)</Button>
-          <Button variant="outline" onClick={() => window.open(api.export.transactionsCsvUrl(), "_blank")}>Export Transactions (.csv)</Button>
+          <Button variant="outline" onClick={() => api.export.download("/api/export/accountant-pack", "accountant-pack.zip").catch((e) => alert("Download failed: " + e.message))}>Download Accountant Pack (.zip)</Button>
+          <Button variant="outline" onClick={() => api.export.download("/api/export/transactions.csv", "transactions.csv").catch((e) => alert("Download failed: " + e.message))}>Export Transactions (.csv)</Button>
         </div>
       </Card>
     </div>
