@@ -4,7 +4,6 @@ import { PALETTE } from "../lib/constants.js";
 
 const ACCOUNT_TYPES = [
   { id: "business", label: "Business", desc: "Ltd company, sole trader" },
-  { id: "personal", label: "Personal", desc: "Track spending & savings" },
   { id: "accountant", label: "Accountant", desc: "Manage client accounts" },
 ];
 
