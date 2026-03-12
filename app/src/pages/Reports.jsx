@@ -68,6 +68,18 @@ export default function Reports() {
       {reportView === "pl" && <ProfitAndLoss transactions={transactions} profile={profile} fixedAssets={fixedAssets} />}
       {reportView === "tax" && <TaxComputation transactions={transactions} profile={profile} dividends={dividends} dlaData={dlaData} fixedAssets={fixedAssets} />}
       {reportView === "summary" && <YearSummary transactions={transactions} profile={profile} dividends={dividends} dlaData={dlaData} fixedAssets={fixedAssets} />}
+
+      {/* Export & Downloads */}
+      <Card style={{ marginTop: 24 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Export & Downloads</h3>
+        <p style={{ fontSize: 13, color: PALETTE.textDim, marginBottom: 16 }}>
+          Download your data for your accountant or personal records.
+        </p>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Button variant="outline" onClick={() => window.open(api.export.accountantPackUrl(), "_blank")}>Download Accountant Pack (.zip)</Button>
+          <Button variant="outline" onClick={() => window.open(api.export.transactionsCsvUrl(), "_blank")}>Export Transactions (.csv)</Button>
+        </div>
+      </Card>
     </div>
   );
 }

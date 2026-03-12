@@ -93,11 +93,6 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
     setSaving(false);
   };
 
-  const downloadExport = (type) => {
-    const url = type === "pack" ? api.export.accountantPackUrl() : api.export.transactionsCsvUrl();
-    window.open(url, "_blank");
-  };
-
   if (loading) return <Spinner />;
 
   return (
@@ -187,18 +182,6 @@ export default function Settings({ onProfileUpdate, onPaypalConnected }) {
 
       {/* Data Maintenance */}
       {isBusiness && <DataMaintenance />}
-
-      {/* Export */}
-      <Card style={{ marginBottom: 20 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text, marginBottom: 8 }}>Export</h3>
-        <p style={{ fontSize: 13, color: PALETTE.textDim, marginBottom: 16 }}>
-          {isBusiness ? "Download your data for your accountant or personal records." : "Download your transaction data."}
-        </p>
-        <div style={{ display: "flex", gap: 12 }}>
-          {isBusiness && <Button variant="outline" onClick={() => downloadExport("pack")}>Download Accountant Pack (.zip)</Button>}
-          <Button variant="outline" onClick={() => downloadExport("csv")}>Export Transactions (.csv)</Button>
-        </div>
-      </Card>
 
       {/* Account info */}
       <Card>

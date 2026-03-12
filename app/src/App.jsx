@@ -31,7 +31,7 @@ const BUSINESS_TABS = [
   { id: "dla", label: "DLA" },
   { id: "assets", label: "Assets" },
   { id: "vat", label: "VAT" },
-  { id: "reports", label: "Reports" },
+  { id: "reports", label: "Tax & Reports" },
   { id: "settings", label: "Settings" },
 ];
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid, ComposedChart, Line, Area } from "recharts";
 import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES, PERSONAL_EXPENSE_CATEGORIES, PIE_COLORS } from "../lib/constants.js";
 import { fmt, r2, fmtDate } from "../lib/format.js";
@@ -161,6 +161,57 @@ export default function Dashboard() {
       .sort((a, b) => b.value - a.value);
   }, [transactions, paypalTxns, isBusiness]);
 
+  const cashFlowData = useMemo(() => {
+    if (!isBusiness) return [];
+    const EXCLUDE = ["transfer", "capital"];
+    const active = transactions.filter((t) => !t.excluded);
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 89);
+    start.setHours(0, 0, 0, 0);
+
+    // Build a map of daily income and expenses
+    const dayMap = {};
+    for (let d = new Date(start); d <= now; d.setDate(d.getDate() + 1)) {
+      const key = d.toISOString().slice(0, 10);
+      dayMap[key] = { income: 0, expenses: 0 };
+    }
+
+    // Sum all transactions before the 90-day window to get the opening balance
+    const seedMoney = Number(profile?.seed_money || 0);
+    let preBalance = seedMoney;
+    active.forEach((t) => {
+      const tDate = new Date(t.date);
+      const key = tDate.toISOString().slice(0, 10);
+      const amt = Number(t.amount);
+      if (tDate < start) {
+        // Accumulate into pre-balance
+        if (t.type === "income" && !EXCLUDE.includes(t.category)) preBalance += amt;
+        else if (t.type === "expense") preBalance -= amt;
+        else if (t.type === "reimbursement") preBalance -= amt;
+      } else if (dayMap[key]) {
+        if (t.type === "income" && !EXCLUDE.includes(t.category)) dayMap[key].income += amt;
+        else if (t.type === "expense") dayMap[key].expenses += amt;
+        else if (t.type === "reimbursement") dayMap[key].expenses += amt;
+      }
+    });
+
+    // Build cumulative running balance
+    let balance = preBalance;
+    const result = [];
+    const sortedKeys = Object.keys(dayMap).sort();
+    sortedKeys.forEach((key) => {
+      balance += dayMap[key].income - dayMap[key].expenses;
+      result.push({
+        date: key,
+        label: new Date(key + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+        balance: r2(balance),
+        expenses: r2(dayMap[key].expenses),
+      });
+    });
+    return result;
+  }, [transactions, profile, isBusiness]);
+
   if (loading) return <Spinner />;
 
   return (
@@ -255,6 +306,58 @@ export default function Dashboard() {
           )}
         </Card>
       </div>
+
+      {/* Cash Flow chart — business mode only */}
+      {isBusiness && cashFlowData.length > 0 && (
+        <Card style={{ marginBottom: 24 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: PALETTE.text, marginBottom: 16 }}>Cash Flow</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={cashFlowData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.border} />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: PALETTE.textMuted, fontSize: 11 }}
+                interval={6}
+              />
+              <YAxis
+                yAxisId="balance"
+                tick={{ fill: PALETTE.textMuted, fontSize: 11 }}
+                tickFormatter={(v) => `£${v}`}
+              />
+              <YAxis
+                yAxisId="expenses"
+                orientation="right"
+                tick={{ fill: PALETTE.textMuted, fontSize: 11 }}
+                tickFormatter={(v) => `£${v}`}
+              />
+              <Tooltip
+                contentStyle={{ background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: PALETTE.text }}
+                formatter={(v, name) => [fmt(v), name === "balance" ? "Balance" : "Expenses"]}
+              />
+              <Area
+                yAxisId="balance"
+                type="monotone"
+                dataKey="balance"
+                stroke={PALETTE.income}
+                fill={PALETTE.income}
+                fillOpacity={0.1}
+                strokeWidth={2}
+                name="balance"
+                dot={false}
+              />
+              <Bar
+                yAxisId="expenses"
+                dataKey="expenses"
+                fill={PALETTE.expense}
+                opacity={0.7}
+                radius={[2, 2, 0, 0]}
+                name="expenses"
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
 
       {/* Recent transactions */}
       <Card>
