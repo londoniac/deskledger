@@ -20,10 +20,12 @@ export default function Transactions() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [showExcluded, setShowExcluded] = useState(false);
 
-  // Collapsed months
-  const [collapsed, setCollapsed] = useState(new Set());
+  // Collapsed months — start all collapsed (null = all collapsed until initialized)
+  const [collapsed, setCollapsed] = useState(null);
+  const isCollapsed = (key) => collapsed === null || collapsed.has(key);
   const toggleMonth = (key) => setCollapsed((prev) => {
-    const next = new Set(prev);
+    const base = prev || new Set(grouped.map((g) => g.key));
+    const next = new Set(base);
     next.has(key) ? next.delete(key) : next.add(key);
     return next;
   });
@@ -452,12 +454,12 @@ export default function Transactions() {
               {/* Month header */}
               <div
                 onClick={() => toggleMonth(group.key)}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: collapsed.has(group.key) ? 0 : 16 }}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: isCollapsed(group.key) ? 0 : 16 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: collapsed.has(group.key) ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isCollapsed(group.key) ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
                   <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{monthLabel}</h3>
-                  {collapsed.has(group.key) && <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({group.transactions.length} transactions)</span>}
+                  {isCollapsed(group.key) && <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({group.transactions.length} transactions)</span>}
                 </div>
                 <div style={{ display: "flex", gap: 16, fontSize: 13, fontFamily: "JetBrains Mono, monospace" }}>
                   <span style={{ color: PALETTE.income }}>+{fmt(monthIncome)}</span>
@@ -466,7 +468,7 @@ export default function Transactions() {
               </div>
 
               {/* Transaction rows */}
-              {!collapsed.has(group.key) && (
+              {!isCollapsed(group.key) && (
                 <div>
                   {/* Table header */}
                   <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 80px 110px 100px 160px 50px", gap: 0, padding: "6px 10px", borderBottom: `1px solid ${PALETTE.border}` }}>

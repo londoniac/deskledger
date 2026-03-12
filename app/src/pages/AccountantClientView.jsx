@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import api from "../lib/api.js";
 import { PALETTE, EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../lib/constants.js";
 import { Card, Button, Badge, Spinner, Select, StatCard } from "../components/ui.jsx";
@@ -583,18 +583,237 @@ function ReadOnlyTable({ headers, rows, emptyMessage }) {
 function TransactionsTab({ clientId }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [collapsed, setCollapsed] = useState(null);
+
   useEffect(() => { api.accountant.getClientTransactions(clientId).then(setData).catch(() => {}).finally(() => setLoading(false)); }, [clientId]);
-  if (loading) return <Spinner />;
+
   const catLabel = (id) => ([...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES].find((c) => c.id === id))?.label || id;
-  return <ReadOnlyTable headers={["Date", "Description", "Type", "Amount", "Category", "Excluded"]} rows={data.slice(0, 200).map((t) => [new Date(t.date).toLocaleDateString("en-GB"), t.description?.slice(0, 60), t.type, fmt(t.amount), catLabel(t.category), t.excluded ? "Yes" : ""])} emptyMessage="No transactions" />;
+
+  const filtered = useMemo(() => {
+    return data.filter((t) => showExcluded || !t.excluded);
+  }, [data, showExcluded]);
+
+  const grouped = useMemo(() => {
+    const groups = {};
+    filtered.forEach((t) => {
+      const d = new Date(t.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!groups[key]) groups[key] = { key, transactions: [] };
+      groups[key].transactions.push(t);
+    });
+    return Object.values(groups).sort((a, b) => b.key.localeCompare(a.key));
+  }, [filtered]);
+
+  const isCollapsed = (key) => collapsed === null || collapsed.has(key);
+  const toggleMonth = (key) => setCollapsed((prev) => {
+    const base = prev || new Set(grouped.map((g) => g.key));
+    const next = new Set(base);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
+  if (loading) return <Spinner />;
+
+  const excludedCount = data.filter((t) => t.excluded).length;
+
+  return (
+    <div>
+      {/* Excluded toggle */}
+      {excludedCount > 0 && (
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            onClick={() => setShowExcluded(!showExcluded)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+              fontSize: 12, fontWeight: 500, border: "none",
+              background: showExcluded ? PALETTE.orange + "20" : PALETTE.bg,
+              color: showExcluded ? PALETTE.orange : PALETTE.textMuted,
+            }}
+          >
+            {showExcluded ? "Hide" : "Show"} {excludedCount} excluded
+          </button>
+          <span style={{ fontSize: 12, color: PALETTE.textMuted }}>{filtered.length} of {data.length} transactions</span>
+        </div>
+      )}
+
+      {/* Excluded summary banner */}
+      {showExcluded && excludedCount > 0 && (() => {
+        const excludedTxns = data.filter((t) => t.excluded);
+        const excludedTotal = excludedTxns.reduce((s, t) => s + Number(t.amount), 0);
+        const reasons = {};
+        excludedTxns.forEach((t) => {
+          const r = t.exclude_reason || "Manually excluded";
+          reasons[r] = (reasons[r] || 0) + 1;
+        });
+        return (
+          <Card style={{ marginBottom: 16, borderLeft: `3px solid ${PALETTE.orange}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: PALETTE.orange, marginBottom: 4 }}>
+                  {excludedTxns.length} Excluded Transaction{excludedTxns.length !== 1 ? "s" : ""}
+                </div>
+                <div style={{ fontSize: 12, color: PALETTE.textMuted }}>
+                  {Object.entries(reasons).map(([reason, count]) => `${reason} (${count})`).join(" · ")}
+                </div>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: PALETTE.orange, fontFamily: "JetBrains Mono, monospace" }}>
+                {fmt(excludedTotal)}
+              </div>
+            </div>
+          </Card>
+        );
+      })()}
+
+      {/* Grouped by month */}
+      {grouped.length === 0 ? (
+        <Card><div style={{ textAlign: "center", padding: 40, color: PALETTE.textMuted, fontSize: 13 }}>No transactions</div></Card>
+      ) : (
+        grouped.map((group) => {
+          const monthLabel = new Date(group.key + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+          const monthIncome = group.transactions.filter((t) => t.type === "income" && !t.excluded && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0);
+          const monthExpenses = group.transactions.filter((t) => t.type === "expense" && !t.excluded && t.category !== "transfer").reduce((s, t) => s + Number(t.amount), 0);
+
+          return (
+            <Card key={group.key} style={{ marginBottom: 16 }}>
+              <div
+                onClick={() => toggleMonth(group.key)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: isCollapsed(group.key) ? 0 : 12 }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isCollapsed(group.key) ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{monthLabel}</h3>
+                  {isCollapsed(group.key) && <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({group.transactions.length} transactions)</span>}
+                </div>
+                <div style={{ display: "flex", gap: 16, fontSize: 13, fontFamily: "JetBrains Mono, monospace" }}>
+                  <span style={{ color: PALETTE.income }}>+{fmt(monthIncome)}</span>
+                  <span style={{ color: PALETTE.expense }}>-{fmt(monthExpenses)}</span>
+                </div>
+              </div>
+
+              {!isCollapsed(group.key) && (
+                <div>
+                  <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 80px 100px 140px", gap: 0, padding: "6px 10px", borderBottom: `1px solid ${PALETTE.border}` }}>
+                    {["Date", "Description", "Type", "Amount", "Category"].map((h) => (
+                      <div key={h} style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600 }}>{h}</div>
+                    ))}
+                  </div>
+                  {group.transactions.map((t) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "grid", gridTemplateColumns: "90px 1fr 80px 100px 140px",
+                        gap: 0, padding: "8px 10px",
+                        borderBottom: `1px solid ${PALETTE.border}`,
+                        opacity: t.excluded ? 0.45 : 1,
+                        borderLeft: `3px solid ${t.excluded ? PALETTE.orange : "transparent"}`,
+                      }}
+                    >
+                      <div style={{ fontSize: 13, color: PALETTE.textDim }}>{fmtDate(t.date)}</div>
+                      <div style={{ fontSize: 13, color: PALETTE.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.excluded ? "line-through" : "none" }}>
+                        {t.description?.slice(0, 60)}
+                        {t.excluded && t.exclude_reason && (
+                          <span style={{ fontSize: 10, color: PALETTE.orange, fontStyle: "italic", marginLeft: 6 }}>({t.exclude_reason})</span>
+                        )}
+                        {t.excluded && t.notes && !t.exclude_reason && (
+                          <span style={{ fontSize: 10, color: PALETTE.orange, fontStyle: "italic", marginLeft: 6 }}>({t.notes})</span>
+                        )}
+                      </div>
+                      <div><Badge color={t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense}>{t.type}</Badge></div>
+                      <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: t.type === "income" ? PALETTE.income : t.type === "transfer" ? PALETTE.purple : PALETTE.expense }}>{fmt(t.amount)}</div>
+                      <div style={{ fontSize: 12, color: PALETTE.textDim }}>{catLabel(t.category)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })
+      )}
+    </div>
+  );
 }
 
 function ExpensesTab({ clientId }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [collapsed, setCollapsed] = useState(null);
+
   useEffect(() => { api.accountant.getClientExpenses(clientId).then(setData).catch(() => {}).finally(() => setLoading(false)); }, [clientId]);
+
+  const grouped = useMemo(() => {
+    const groups = {};
+    data.forEach((e) => {
+      const d = new Date(e.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!groups[key]) groups[key] = { key, expenses: [] };
+      groups[key].expenses.push(e);
+    });
+    return Object.values(groups).sort((a, b) => b.key.localeCompare(a.key));
+  }, [data]);
+
+  const isCollapsed = (key) => collapsed === null || collapsed.has(key);
+  const toggleMonth = (key) => setCollapsed((prev) => {
+    const base = prev || new Set(grouped.map((g) => g.key));
+    const next = new Set(base);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
   if (loading) return <Spinner />;
-  return <ReadOnlyTable headers={["Date", "Description", "Amount", "Category", "Supplier", "Status"]} rows={data.map((e) => { const cat = EXPENSE_CATEGORIES.find((c) => c.id === e.category); return [new Date(e.date).toLocaleDateString("en-GB"), e.description?.slice(0, 60), fmt(e.amount), cat?.label || e.category, e.supplier, e.status]; })} emptyMessage="No expenses" />;
+
+  if (data.length === 0) {
+    return <Card><div style={{ textAlign: "center", padding: 40, color: PALETTE.textMuted, fontSize: 13 }}>No expenses</div></Card>;
+  }
+
+  return (
+    <div>
+      {grouped.map((group) => {
+        const monthLabel = new Date(group.key + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+        const monthTotal = group.expenses.reduce((s, e) => s + Number(e.amount), 0);
+
+        return (
+          <Card key={group.key} style={{ marginBottom: 16 }}>
+            <div
+              onClick={() => toggleMonth(group.key)}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: isCollapsed(group.key) ? 0 : 12 }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isCollapsed(group.key) ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{monthLabel}</h3>
+                <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({group.expenses.length} expense{group.expenses.length !== 1 ? "s" : ""})</span>
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: PALETTE.expense, fontFamily: "JetBrains Mono, monospace" }}>{fmt(monthTotal)}</span>
+            </div>
+
+            {!isCollapsed(group.key) && (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 120px 100px 100px 80px", gap: 0, padding: "6px 10px", borderBottom: `1px solid ${PALETTE.border}` }}>
+                  {["Date", "Description", "Category", "Amount", "Supplier", "Status"].map((h) => (
+                    <div key={h} style={{ fontSize: 11, color: PALETTE.textMuted, fontWeight: 600 }}>{h}</div>
+                  ))}
+                </div>
+                {group.expenses.map((e) => {
+                  const cat = EXPENSE_CATEGORIES.find((c) => c.id === e.category);
+                  return (
+                    <div key={e.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 120px 100px 100px 80px", gap: 0, padding: "8px 10px", borderBottom: `1px solid ${PALETTE.border}` }}>
+                      <div style={{ fontSize: 13, color: PALETTE.textDim }}>{fmtDate(e.date)}</div>
+                      <div style={{ fontSize: 13, color: PALETTE.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.description?.slice(0, 60)}</div>
+                      <div style={{ fontSize: 12, color: PALETTE.textDim }}>{cat?.label || e.category}</div>
+                      <div style={{ fontSize: 13, fontFamily: "JetBrains Mono, monospace", fontWeight: 600, color: PALETTE.expense }}>{fmt(e.amount)}</div>
+                      <div style={{ fontSize: 12, color: PALETTE.textDim }}>{e.supplier || "—"}</div>
+                      <div><Badge color={e.status === "pending" ? PALETTE.warning : e.status === "reimbursed" ? PALETTE.income : PALETTE.blue}>{e.status}</Badge></div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        );
+      })}
+    </div>
+  );
 }
 
 function DividendsTab({ clientId }) {

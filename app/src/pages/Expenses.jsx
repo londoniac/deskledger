@@ -14,7 +14,7 @@ export default function Expenses() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [expanded, setExpanded] = useState(new Set());
-  const [collapsed, setCollapsed] = useState(new Set());
+  const [collapsed, setCollapsed] = useState(null);
   const [uploading, setUploading] = useState(null);
 
   const [form, setForm] = useState({
@@ -136,9 +136,11 @@ export default function Expenses() {
     });
   }
 
+  const isCollapsed = (key) => collapsed === null || collapsed.has(key);
   function toggleMonth(key) {
     setCollapsed((prev) => {
-      const next = new Set(prev);
+      const base = prev || new Set(grouped.map((g) => g.key));
+      const next = new Set(base);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
@@ -319,23 +321,23 @@ export default function Expenses() {
         grouped.map((group) => {
           const monthLabel = new Date(group.key + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
           const monthTotal = group.expenses.reduce((s, e) => s + Number(e.amount), 0);
-          const isCollapsed = collapsed.has(group.key);
+          const monthCollapsed = isCollapsed(group.key);
 
           return (
             <Card key={group.key} style={{ marginBottom: 16 }}>
               <div
                 onClick={() => toggleMonth(group.key)}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: isCollapsed ? 0 : 12 }}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: monthCollapsed ? 0 : 12 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
+                  <span style={{ fontSize: 12, color: PALETTE.textMuted, transition: "transform 0.2s", display: "inline-block", transform: monthCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>&#9660;</span>
                   <h3 style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{monthLabel}</h3>
                   <span style={{ fontSize: 12, color: PALETTE.textMuted }}>({group.expenses.length} expense{group.expenses.length !== 1 ? "s" : ""})</span>
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 700, color: PALETTE.expense, fontFamily: "JetBrains Mono, monospace" }}>{fmt(monthTotal)}</span>
               </div>
 
-              {!isCollapsed && group.expenses.map((exp) => (
+              {!monthCollapsed && group.expenses.map((exp) => (
                 <ExpenseRow
                   key={exp.id}
                   expense={exp}
