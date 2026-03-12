@@ -35,20 +35,21 @@ const BUSINESS_TABS = [
   { id: "settings", label: "Settings" },
 ];
 
-const PERSONAL_TABS = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "budget", label: "Budget" },
-  { id: "transactions", label: "Transactions" },
-  { id: "debts", label: "Debts" },
-  { id: "import", label: "Import" },
-  { id: "settings", label: "Settings" },
-];
+// TEMPORARILY HIDDEN — personal tabs will return when personal mode is re-enabled
+// const PERSONAL_TABS = [
+//   { id: "dashboard", label: "Dashboard" },
+//   { id: "budget", label: "Budget" },
+//   { id: "transactions", label: "Transactions" },
+//   { id: "debts", label: "Debts" },
+//   { id: "import", label: "Import" },
+//   { id: "settings", label: "Settings" },
+// ];
 
 export default function App() {
   const { user, loading, signOut } = useAuth();
   const [authPage, setAuthPage] = useState("login");
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [mode, setMode] = useState(() => localStorage.getItem("dl_mode") || "business");
+  const mode = "business";
   const [profile, setProfile] = useState(null);
   const [paypalConnected, setPaypalConnected] = useState(false);
 
@@ -61,19 +62,10 @@ export default function App() {
     }
   }, [user]);
 
-  const switchMode = (newMode) => {
-    setMode(newMode);
-    localStorage.setItem("dl_mode", newMode);
-    setActiveTab("dashboard"); // reset to dashboard on switch
-  };
-
-  const businessTabs = paypalConnected
+  const tabs = paypalConnected
     ? [...BUSINESS_TABS.slice(0, 3), { id: "paypal", label: "PayPal" }, ...BUSINESS_TABS.slice(3)]
     : BUSINESS_TABS;
-  const tabs = mode === "personal" ? PERSONAL_TABS : businessTabs;
-  const displayName = mode === "business"
-    ? (profile?.company_name || "Business")
-    : "Personal";
+  const displayName = profile?.company_name || "Business";
 
   if (loading) {
     return (
@@ -100,34 +92,6 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <h1 style={{ fontSize: 18, fontWeight: 700, color: PALETTE.accent, letterSpacing: -0.5 }}>DeskLedger</h1>
 
-            {/* Mode switcher */}
-            <div style={{ display: "flex", background: PALETTE.bg, borderRadius: 8, padding: 2, border: `1px solid ${PALETTE.border}` }}>
-              <button
-                onClick={() => switchMode("business")}
-                style={{
-                  padding: "5px 12px", border: "none", borderRadius: 6, cursor: "pointer",
-                  fontSize: 11, fontWeight: 600,
-                  background: mode === "business" ? PALETTE.accent : "transparent",
-                  color: mode === "business" ? PALETTE.bg : PALETTE.textMuted,
-                  transition: "all 0.2s",
-                }}
-              >
-                Business
-              </button>
-              <button
-                onClick={() => switchMode("personal")}
-                style={{
-                  padding: "5px 12px", border: "none", borderRadius: 6, cursor: "pointer",
-                  fontSize: 11, fontWeight: 600,
-                  background: mode === "personal" ? PALETTE.purple : "transparent",
-                  color: mode === "personal" ? "#fff" : PALETTE.textMuted,
-                  transition: "all 0.2s",
-                }}
-              >
-                Personal
-              </button>
-            </div>
-
             <span style={{ fontSize: 12, color: PALETTE.textDim }}>{displayName}</span>
 
             {/* Divider */}
@@ -142,8 +106,8 @@ export default function App() {
                   style={{
                     padding: "6px 14px", border: "none", borderRadius: 8, cursor: "pointer",
                     fontSize: 12, fontWeight: 500,
-                    background: activeTab === tab.id ? (mode === "personal" ? PALETTE.purple + "20" : PALETTE.accent + "15") : "transparent",
-                    color: activeTab === tab.id ? (mode === "personal" ? PALETTE.purple : PALETTE.accent) : PALETTE.textDim,
+                    background: activeTab === tab.id ? PALETTE.accent + "15" : "transparent",
+                    color: activeTab === tab.id ? PALETTE.accent : PALETTE.textDim,
                   }}
                 >
                   {tab.label}

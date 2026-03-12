@@ -143,11 +143,18 @@ function ProfitAndLoss({ transactions, paypalTxns, personalExpenses, profile, fi
 
   // Expenses by HMRC category (excluding materials which is cost of sales)
   const expenseByCategory = {};
+  const nonDeductibleExpenses = {};
   EXPENSE_CATEGORIES.filter((c) => c.id !== "materials" && c.id !== "transfer" && c.hmrc).forEach((c) => {
     const total = active
       .filter((t) => t.type === "expense" && t.category === c.id)
       .reduce((s, t) => s + Number(t.amount), 0);
-    if (total > 0) expenseByCategory[c.id] = { label: c.label, hmrc: c.hmrc, total: r2(total) };
+    if (total > 0) {
+      if (c.deductible === false) {
+        nonDeductibleExpenses[c.id] = { label: c.label, hmrc: c.hmrc, total: r2(total) };
+      } else {
+        expenseByCategory[c.id] = { label: c.label, hmrc: c.hmrc, total: r2(total) };
+      }
+    }
   });
 
   // PayPal expenses
@@ -167,6 +174,7 @@ function ProfitAndLoss({ transactions, paypalTxns, personalExpenses, profile, fi
   }
 
   const totalExpenses = r2(Object.values(expenseByCategory).reduce((s, c) => s + c.total, 0));
+  const totalNonDeductible = r2(Object.values(nonDeductibleExpenses).reduce((s, c) => s + c.total, 0));
   const netProfitBeforeTax = r2(grossProfit - totalExpenses);
   const { tax, effectiveRate } = calcCorpTax(netProfitBeforeTax);
   const netProfitAfterTax = r2(netProfitBeforeTax - tax);
@@ -213,8 +221,18 @@ function ProfitAndLoss({ transactions, paypalTxns, personalExpenses, profile, fi
         {Object.values(expenseByCategory).map((c) => (
           <PLRow key={c.label} label={`${c.label} (${c.hmrc})`} value={c.total} indent />
         ))}
-        <PLRow label="Total Expenses" value={totalExpenses} bold />
+        <PLRow label="Total Allowable Expenses" value={totalExpenses} bold />
       </PLSection>
+
+      {/* Non-deductible expenses */}
+      {Object.keys(nonDeductibleExpenses).length > 0 && (
+        <PLSection title="NON-DEDUCTIBLE EXPENSES">
+          {Object.values(nonDeductibleExpenses).map((c) => (
+            <PLRow key={c.label} label={`${c.label} (non-deductible)`} value={c.total} indent color={PALETTE.orange} />
+          ))}
+          <PLRow label="Total Non-Deductible" value={totalNonDeductible} bold color={PALETTE.orange} />
+        </PLSection>
+      )}
 
       {/* Net Profit */}
       <div style={{ borderTop: `2px solid ${PALETTE.border}`, paddingTop: 16, marginTop: 16 }}>
@@ -242,8 +260,15 @@ function TaxComputation({ transactions, paypalTxns, personalExpenses, profile, d
     .filter((t) => t.type === "income" && !EXCLUDE_INCOME.includes(t.category))
     .reduce((s, t) => s + Number(t.amount), 0));
 
+  // Non-deductible category IDs (e.g. entertainment)
+  const nonDeductibleIds = EXPENSE_CATEGORIES.filter((c) => c.deductible === false).map((c) => c.id);
+
   const bankExpenses = r2(active
-    .filter((t) => t.type === "expense" && t.category !== "transfer")
+    .filter((t) => t.type === "expense" && t.category !== "transfer" && !nonDeductibleIds.includes(t.category))
+    .reduce((s, t) => s + Number(t.amount), 0));
+
+  const entertainmentExpenses = r2(active
+    .filter((t) => t.type === "expense" && nonDeductibleIds.includes(t.category))
     .reduce((s, t) => s + Number(t.amount), 0));
 
   const ppAuthorPayouts = r2(paypalTxns.filter((t) => t.type === "author_payout").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0));
@@ -290,6 +315,15 @@ function TaxComputation({ transactions, paypalTxns, personalExpenses, profile, d
         <PLRow label="Total Allowable Expenses" value={totalExpenses} indent bold />
         <PLRow label="Trading Profit (Box 155)" value={tradingProfit} bold color={tradingProfit >= 0 ? PALETTE.income : PALETTE.danger} />
       </PLSection>
+
+      {entertainmentExpenses > 0 && (
+        <PLSection title="NON-DEDUCTIBLE EXPENSES (DISALLOWABLE)">
+          <PLRow label="Client Entertainment (non-deductible)" value={entertainmentExpenses} indent color={PALETTE.orange} />
+          <div style={{ padding: "6px 12px", fontSize: 11, color: PALETTE.textMuted }}>
+            Entertainment is not an allowable deduction for corporation tax. It is excluded from the expenses above.
+          </div>
+        </PLSection>
+      )}
 
       <PLSection title="TAXABLE PROFIT">
         <PLRow label="Profits chargeable to CT (Box 235)" value={taxableProfit} bold />

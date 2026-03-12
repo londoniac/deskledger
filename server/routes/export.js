@@ -32,8 +32,9 @@ router.get("/accountant-pack", async (req, res, next) => {
     const active = transactions.filter((t) => !t.excluded);
     const income = active.filter((t) => t.type === "income" && t.category !== "transfer" && t.category !== "capital");
     const expenses = active.filter((t) => t.type === "expense" && t.category !== "transfer" && t.type !== "reimbursement");
+    const nonDeductibleIds = EXPENSE_CATEGORIES.filter((c) => c.deductible === false).map((c) => c.id);
     const totalIncome = income.reduce((s, t) => s + Number(t.amount), 0);
-    const totalBankExpenses = expenses.reduce((s, t) => s + Number(t.amount), 0);
+    const totalBankExpenses = expenses.filter((t) => !nonDeductibleIds.includes(t.category)).reduce((s, t) => s + Number(t.amount), 0);
     const ppAuthorPayouts = paypalTransactions.filter((t) => t.type === "author_payout").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0);
     const ppFees = paypalTransactions.filter((t) => t.type === "fee").reduce((s, t) => s + Number(t.gbp_amount || t.amount || 0), 0);
     const peTotal = personalExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
@@ -294,13 +295,23 @@ router.get("/accountant-pack", async (req, res, next) => {
     const s455 = dlaBalance > 0 ? r2(dlaBalance * 0.3375) : 0;
     const totalDividends = dividends.reduce((s, d) => s + Number(d.amount), 0);
 
-    // Expense breakdown by HMRC category
+    // Expense breakdown by HMRC category (separate deductible vs non-deductible)
     const expByHmrc = {};
+    const nonDeductibleByHmrc = {};
     expenses.forEach((t) => {
       const cat = EXPENSE_CATEGORIES.find((c) => c.id === t.category);
-      const hmrc = cat?.hmrc || "Other";
-      expByHmrc[hmrc] = (expByHmrc[hmrc] || 0) + Number(t.amount);
+      // Support legacy "marketing" category → treat as "advertising"
+      const effectiveCat = t.category === "marketing"
+        ? EXPENSE_CATEGORIES.find((c) => c.id === "advertising") || cat
+        : cat;
+      const hmrc = effectiveCat?.hmrc || "Other";
+      if (effectiveCat?.deductible === false) {
+        nonDeductibleByHmrc[hmrc] = (nonDeductibleByHmrc[hmrc] || 0) + Number(t.amount);
+      } else {
+        expByHmrc[hmrc] = (expByHmrc[hmrc] || 0) + Number(t.amount);
+      }
     });
+    const totalNonDeductible = Object.values(nonDeductibleByHmrc).reduce((s, v) => s + v, 0);
 
     // Comprehensive tax summary
     const taxLines = [
@@ -333,6 +344,20 @@ router.get("/accountant-pack", async (req, res, next) => {
       `  NET PROFIT BEFORE TAX:                 ${fmt(profit).padStart(12)}`,
       `  Corporation Tax @ ${taxRate}%:              ${fmt(corpTax).padStart(12)}`,
       `  NET PROFIT AFTER TAX:                  ${fmt(profit - corpTax).padStart(12)}`,
+      ``,
+      ...(totalNonDeductible > 0 ? [
+        `───────────────────────────────────────────────────────`,
+        `  NON-DEDUCTIBLE EXPENSES (DISALLOWABLE)`,
+        `───────────────────────────────────────────────────────`,
+        ``,
+        ...Object.entries(nonDeductibleByHmrc).map(([cat, amt]) =>
+          `    ${cat}:${" ".repeat(Math.max(1, 37 - cat.length))}${fmt(amt).padStart(12)}`),
+        `    TOTAL NON-DEDUCTIBLE:                ${fmt(totalNonDeductible).padStart(12)}`,
+        ``,
+        `    NOTE: Non-deductible expenses are NOT included in`,
+        `    the allowable expenses above. Entertainment costs`,
+        `    cannot be claimed as a deduction for corporation tax.`,
+      ] : []),
       ``,
       `───────────────────────────────────────────────────────`,
       `  ADDITIONAL ITEMS`,

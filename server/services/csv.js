@@ -161,7 +161,7 @@ export function autoCategory(desc, accountType = "business") {
   if (d.includes("train") || d.includes("uber") || d.includes("fuel") || d.includes("parking") || d.includes("taxi") || d.includes("tfl")) return "travel";
   if (d.includes("salary") || d.includes("payroll") || d.includes("wages")) return "staff";
   if (d.includes("accountant") || d.includes("solicitor") || d.includes("legal") || d.includes("lawyer")) return "professional";
-  if (d.includes("google ads") || d.includes("facebook") || d.includes("marketing") || d.includes("advert") || d.includes("reddit")) return "marketing";
+  if (d.includes("google ads") || d.includes("facebook") || d.includes("marketing") || d.includes("advert") || d.includes("reddit")) return "advertising";
   if (d.includes("subscription") || d.includes("software") || d.includes("saas") || d.includes("github") || d.includes("slack") || d.includes("notion") || d.includes("adobe")) return "subscriptions";
   if (d.includes("insurance")) return "insurance";
   if (d.includes("electric") || d.includes("water") || d.includes("gas") || d.includes("phone") || d.includes("broadband") || d.includes("mobile") || d.includes("internet")) return "utilities";
