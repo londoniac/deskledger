@@ -39,7 +39,6 @@ const BUSINESS_TABS = [
 
 const ACCOUNTANT_TABS = [
   { id: "clients", label: "Clients" },
-  { id: "settings", label: "Settings" },
 ];
 
 // TEMPORARILY HIDDEN — personal tabs will return when personal mode is re-enabled
@@ -166,7 +165,6 @@ export default function App() {
               {activeTab === "clients" && selectedClientId && (
                 <AccountantClientView clientId={selectedClientId} onBack={() => setSelectedClientId(null)} />
               )}
-              {activeTab === "settings" && <Settings onProfileUpdate={setProfile} />}
             </>
           ) : (
             // Business/personal views
