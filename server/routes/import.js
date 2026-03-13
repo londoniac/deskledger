@@ -71,30 +71,34 @@ router.post("/confirm", validate(importConfirmSchema), async (req, res, next) =>
   try {
     const { transactions } = req.body;
 
-    const rows = transactions.map((t) => ({
-      id: t.id,
-      user_id: req.userId,
-      date: t.date,
-      description: t.description,
-      amount: t.amount,
-      type: t.type,
-      category: t.category || "",
-      source: t.source || "bank",
-      vat_rate: t.vatRate || 0,
-      vat_amount: t.vatAmount || 0,
-      reconciled: false,
-      excluded: false,
-      notes: t.notes || "",
-      monzo_id: t.monzoId || null,
-      updated_at: new Date().toISOString(),
-    }));
+    let imported = 0;
+    if (transactions.length > 0) {
+      const rows = transactions.map((t) => ({
+        id: t.id,
+        user_id: req.userId,
+        date: t.date,
+        description: t.description,
+        amount: t.amount,
+        type: t.type,
+        category: t.category || "",
+        source: t.source || "bank",
+        vat_rate: t.vatRate || 0,
+        vat_amount: t.vatAmount || 0,
+        reconciled: false,
+        excluded: false,
+        notes: t.notes || "",
+        monzo_id: t.monzoId || null,
+        updated_at: new Date().toISOString(),
+      }));
 
-    const { data, error } = await req.supabase
-      .from("transactions")
-      .upsert(rows, { onConflict: "id,user_id" })
-      .select();
+      const { data, error } = await req.supabase
+        .from("transactions")
+        .upsert(rows, { onConflict: "id,user_id" })
+        .select();
 
-    if (error) throw error;
+      if (error) throw error;
+      imported = (data || []).length;
+    }
 
     // Save closing balance if provided (from CSV parse step)
     const { closingBalance, closingBalanceDate } = req.body;
@@ -109,7 +113,7 @@ router.post("/confirm", validate(importConfirmSchema), async (req, res, next) =>
         .eq("id", req.userId);
     }
 
-    res.json({ success: true, imported: (data || []).length });
+    res.json({ success: true, imported });
   } catch (err) {
     next(err);
   }

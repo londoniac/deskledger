@@ -155,7 +155,7 @@ export const importConfirmSchema = z.object({
     description: z.string(),
     amount: z.coerce.number(),
     type: z.string(),
-  }).passthrough()).min(1, "No transactions to import"),
+  }).passthrough()),
   closingBalance: z.coerce.number().nullable().optional(),
   closingBalanceDate: z.string().nullable().optional(),
 }).passthrough();

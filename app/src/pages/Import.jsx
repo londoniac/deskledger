@@ -163,8 +163,8 @@ export default function Import() {
           </div>
 
           <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
-            <Button onClick={confirmImport} disabled={importing || preview.newCount === 0}>
-              {importing ? "Importing..." : `Import ${preview.newCount} Transactions`}
+            <Button onClick={confirmImport} disabled={importing || (preview.newCount === 0 && !preview.closingBalance)}>
+              {importing ? "Importing..." : preview.newCount === 0 ? "Update Balance" : `Import ${preview.newCount} Transactions`}
             </Button>
             <Button variant="ghost" onClick={() => { setPreview(null); setFile(null); setCsvText(""); }}>Cancel</Button>
           </div>
