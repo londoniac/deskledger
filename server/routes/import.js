@@ -103,11 +103,17 @@ router.post("/confirm", validate(importConfirmSchema), async (req, res, next) =>
     // Save closing balance if provided (from CSV parse step)
     const { closingBalance, closingBalanceDate } = req.body;
     if (closingBalance != null) {
+      // Convert DD/MM/YYYY to YYYY-MM-DD for PostgreSQL DATE column
+      let isoDate = closingBalanceDate;
+      if (isoDate && /^\d{2}\/\d{2}\/\d{4}$/.test(isoDate)) {
+        const [dd, mm, yyyy] = isoDate.split("/");
+        isoDate = `${yyyy}-${mm}-${dd}`;
+      }
       await req.supabase
         .from("user_profiles")
         .update({
           bank_balance: closingBalance,
-          bank_balance_date: closingBalanceDate || new Date().toISOString().split("T")[0],
+          bank_balance_date: isoDate || new Date().toISOString().split("T")[0],
           updated_at: new Date().toISOString(),
         })
         .eq("id", req.userId);
