@@ -30,16 +30,45 @@ function parseCSVLine(line) {
   return result;
 }
 
-// Extract the closing balance from the last row of a bank CSV (e.g. Monzo "Balance" column)
+// Extract the closing balance from the most recent row of a bank CSV (e.g. Monzo "Balance" column)
+// Monzo exports newest-first, so we find the row with the latest date rather than assuming order
 export function extractClosingBalance(rows) {
   if (!rows || rows.length === 0) return null;
-  const lastRow = rows[rows.length - 1];
-  const balanceStr = lastRow.balance || lastRow["closing balance"] || lastRow["available balance"] || "";
-  const val = parseFloat(balanceStr.replace(/[£$,]/g, ""));
-  if (isNaN(val)) return null;
 
-  // Also get the date of the last transaction
-  const dateStr = lastRow.date || lastRow.transaction_date || lastRow["created"] || "";
+  const getBalance = (row) => {
+    const str = row.balance || row["closing balance"] || row["available balance"] || "";
+    return parseFloat(str.replace(/[£$,]/g, ""));
+  };
+  const getDate = (row) => {
+    const str = row.date || row.transaction_date || row["created"] || "";
+    if (!str) return null;
+    // Handle DD/MM/YYYY and YYYY-MM-DD
+    const parts = str.split("/");
+    if (parts.length === 3 && parts[2].length === 4) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+    return new Date(str);
+  };
+
+  // Find the row with the most recent date that has a valid balance
+  let bestRow = null;
+  let bestDate = null;
+  for (const row of rows) {
+    const bal = getBalance(row);
+    if (isNaN(bal)) continue;
+    const d = getDate(row);
+    if (!d || isNaN(d.getTime())) {
+      if (!bestRow) bestRow = row; // fallback if no dates
+      continue;
+    }
+    if (!bestDate || d >= bestDate) {
+      bestDate = d;
+      bestRow = row;
+    }
+  }
+
+  if (!bestRow) return null;
+  const val = getBalance(bestRow);
+  if (isNaN(val)) return null;
+  const dateStr = bestRow.date || bestRow.transaction_date || bestRow["created"] || "";
   return { balance: val, date: dateStr };
 }
 
